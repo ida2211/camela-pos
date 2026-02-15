@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { formatRupiah, formatDateTime } from "@/lib/format";
+import { format } from "date-fns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,8 +15,11 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Search, Trash2, ShoppingCart, Pencil, Eye } from "lucide-react";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Plus, Search, Trash2, ShoppingCart, Pencil, Eye, CalendarIcon, X } from "lucide-react";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import type { Tables } from "@/integrations/supabase/types";
 
 type Sale = Tables<"sales">;
@@ -37,6 +41,8 @@ export default function Penjualan() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [selProduct, setSelProduct] = useState("");
   const [selQty, setSelQty] = useState("1");
+  const [dateFrom, setDateFrom] = useState<Date | undefined>();
+  const [dateTo, setDateTo] = useState<Date | undefined>();
 
   // View detail
   const [viewSale, setViewSale] = useState<Sale | null>(null);
@@ -165,9 +171,23 @@ export default function Penjualan() {
     setEditOpen(true);
   };
 
-  const filtered = sales.filter((s) =>
-    s.customer_name.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = useMemo(() => {
+    return sales.filter((s) => {
+      const matchSearch = s.customer_name.toLowerCase().includes(search.toLowerCase());
+      const saleDate = new Date(s.created_at);
+      const matchFrom = dateFrom ? saleDate >= new Date(dateFrom.setHours(0, 0, 0, 0)) : true;
+      const matchTo = dateTo ? saleDate <= new Date(new Date(dateTo).setHours(23, 59, 59, 999)) : true;
+      return matchSearch && matchFrom && matchTo;
+    });
+  }, [sales, search, dateFrom, dateTo]);
+
+  const totalPenjualan = filtered.reduce((s, r) => s + r.total, 0);
+  const totalProfit = filtered.reduce((s, r) => s + r.profit, 0);
+
+  const clearFilters = () => {
+    setDateFrom(undefined);
+    setDateTo(undefined);
+  };
 
   return (
     <div className="space-y-6">
@@ -178,18 +198,57 @@ export default function Penjualan() {
         </Button>
       </div>
 
-      <Card className="border-primary/20 bg-primary/5">
-        <CardContent className="flex items-center justify-between py-4">
-          <span className="text-sm font-medium text-muted-foreground">Total Penjualan</span>
-          <span className="text-xl font-bold text-primary">{formatRupiah(sales.reduce((s, r) => s + r.total, 0))}</span>
-        </CardContent>
-      </Card>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Card className="border-primary/20 bg-primary/5">
+          <CardContent className="flex items-center justify-between py-4">
+            <span className="text-sm font-medium text-muted-foreground">Total Penjualan</span>
+            <span className="text-xl font-bold text-primary">{formatRupiah(totalPenjualan)}</span>
+          </CardContent>
+        </Card>
+        <Card className="border-emerald-500/20 bg-emerald-500/5">
+          <CardContent className="flex items-center justify-between py-4">
+            <span className="text-sm font-medium text-muted-foreground">Total Profit</span>
+            <span className="text-xl font-bold text-emerald-600">{formatRupiah(totalProfit)}</span>
+          </CardContent>
+        </Card>
+      </div>
 
       <Card>
         <CardHeader className="pb-3">
-          <div className="relative max-w-sm">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input placeholder="Cari customer..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div className="relative max-w-sm flex-1">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input placeholder="Cari customer..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+            </div>
+            <div className="flex items-end gap-2">
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className={cn("w-[150px] justify-start text-left font-normal", !dateFrom && "text-muted-foreground")}>
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {dateFrom ? format(dateFrom, "dd/MM/yyyy") : "Dari"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar mode="single" selected={dateFrom} onSelect={setDateFrom} initialFocus className="p-3 pointer-events-auto" />
+                </PopoverContent>
+              </Popover>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className={cn("w-[150px] justify-start text-left font-normal", !dateTo && "text-muted-foreground")}>
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {dateTo ? format(dateTo, "dd/MM/yyyy") : "Sampai"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar mode="single" selected={dateTo} onSelect={setDateTo} initialFocus className="p-3 pointer-events-auto" />
+                </PopoverContent>
+              </Popover>
+              {(dateFrom || dateTo) && (
+                <Button variant="ghost" size="icon" onClick={clearFilters}>
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
           </div>
         </CardHeader>
         <CardContent className="p-0">
