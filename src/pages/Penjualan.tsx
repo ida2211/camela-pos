@@ -14,8 +14,12 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Search, Trash2, ShoppingCart } from "lucide-react";
+import { Plus, Search, Trash2, ShoppingCart, Pencil, Eye } from "lucide-react";
 import { toast } from "sonner";
+import type { Tables } from "@/integrations/supabase/types";
+
+type Sale = Tables<"sales">;
+type SaleItem = Tables<"sale_items">;
 
 interface CartItem {
   product_id: string;
@@ -33,6 +37,16 @@ export default function Penjualan() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [selProduct, setSelProduct] = useState("");
   const [selQty, setSelQty] = useState("1");
+
+  // View detail
+  const [viewSale, setViewSale] = useState<Sale | null>(null);
+  const [viewItems, setViewItems] = useState<SaleItem[]>([]);
+  const [viewOpen, setViewOpen] = useState(false);
+
+  // Edit
+  const [editSale, setEditSale] = useState<Sale | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editOpen, setEditOpen] = useState(false);
 
   const { data: products = [] } = useQuery({
     queryKey: ["products"],
@@ -98,7 +112,6 @@ export default function Penjualan() {
       }));
       await supabase.from("sale_items").insert(items);
 
-      // Decrease stock
       for (const c of cart) {
         const p = products.find((pr) => pr.id === c.product_id);
         if (p) {
@@ -115,6 +128,42 @@ export default function Penjualan() {
       toast.success("Transaksi berhasil!");
     },
   });
+
+  const deleteSaleMut = useMutation({
+    mutationFn: async (id: string) => {
+      await supabase.from("sale_items").delete().eq("sale_id", id);
+      await supabase.from("sales").delete().eq("id", id);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sales"] });
+      toast.success("Penjualan dihapus");
+    },
+  });
+
+  const updateSaleMut = useMutation({
+    mutationFn: async () => {
+      if (!editSale) return;
+      await supabase.from("sales").update({ customer_name: editName }).eq("id", editSale.id);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sales"] });
+      setEditOpen(false);
+      toast.success("Penjualan diperbarui");
+    },
+  });
+
+  const openView = async (sale: Sale) => {
+    const { data } = await supabase.from("sale_items").select("*").eq("sale_id", sale.id);
+    setViewSale(sale);
+    setViewItems(data ?? []);
+    setViewOpen(true);
+  };
+
+  const openEdit = (sale: Sale) => {
+    setEditSale(sale);
+    setEditName(sale.customer_name);
+    setEditOpen(true);
+  };
 
   const filtered = sales.filter((s) =>
     s.customer_name.toLowerCase().includes(search.toLowerCase())
@@ -145,12 +194,13 @@ export default function Penjualan() {
                 <TableHead className="text-right">Total</TableHead>
                 <TableHead className="text-right">Modal</TableHead>
                 <TableHead className="text-right">Keuntungan</TableHead>
+                <TableHead className="text-right">Aksi</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
                     Belum ada penjualan
                   </TableCell>
                 </TableRow>
@@ -162,6 +212,19 @@ export default function Penjualan() {
                     <TableCell className="text-right">{formatRupiah(s.total)}</TableCell>
                     <TableCell className="text-right text-muted-foreground">{formatRupiah(s.cost)}</TableCell>
                     <TableCell className="text-right font-semibold text-emerald">{formatRupiah(s.profit)}</TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-1">
+                        <Button variant="ghost" size="icon" onClick={() => openView(s)}>
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => openEdit(s)}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => deleteSaleMut.mutate(s.id)}>
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
+                    </TableCell>
                   </TableRow>
                 ))
               )}
@@ -170,6 +233,7 @@ export default function Penjualan() {
         </CardContent>
       </Card>
 
+      {/* New Transaction Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
@@ -245,6 +309,68 @@ export default function Penjualan() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* View Detail Dialog */}
+      <Dialog open={viewOpen} onOpenChange={setViewOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Detail Penjualan</DialogTitle>
+          </DialogHeader>
+          {viewSale && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <span className="text-muted-foreground">Customer</span>
+                <span className="font-medium">{viewSale.customer_name}</span>
+                <span className="text-muted-foreground">Tanggal</span>
+                <span>{formatDateTime(viewSale.created_at)}</span>
+                <span className="text-muted-foreground">Total</span>
+                <span className="font-bold">{formatRupiah(viewSale.total)}</span>
+                <span className="text-muted-foreground">Keuntungan</span>
+                <span className="font-bold text-emerald">{formatRupiah(viewSale.profit)}</span>
+              </div>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Produk</TableHead>
+                    <TableHead className="text-right">Qty</TableHead>
+                    <TableHead className="text-right">Harga</TableHead>
+                    <TableHead className="text-right">Subtotal</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {viewItems.map((item) => (
+                    <TableRow key={item.id}>
+                      <TableCell>{item.product_name}</TableCell>
+                      <TableCell className="text-right">{item.qty}</TableCell>
+                      <TableCell className="text-right">{formatRupiah(item.sell_price)}</TableCell>
+                      <TableCell className="text-right">{formatRupiah(item.subtotal)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Dialog */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Penjualan</DialogTitle>
+          </DialogHeader>
+          <div>
+            <Label>Nama Customer</Label>
+            <Input value={editName} onChange={(e) => setEditName(e.target.value)} />
+          </div>
+          <DialogFooter>
+            <Button onClick={() => updateSaleMut.mutate()} disabled={updateSaleMut.isPending}>
+              {updateSaleMut.isPending ? "Menyimpan..." : "Simpan"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
+

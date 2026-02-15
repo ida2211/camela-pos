@@ -6,7 +6,7 @@ import {
   ShoppingCart,
   TrendingUp,
   Wallet,
-  Package,
+  BarChart3,
 } from "lucide-react";
 import {
   BarChart,
@@ -43,6 +43,8 @@ export default function Dashboard() {
   const totalProfit = sales?.reduce((s, r) => s + r.profit, 0) ?? 0;
   const totalExpOps = expenses?.filter((e) => e.category === "Operasional").reduce((s, r) => s + r.amount, 0) ?? 0;
   const totalExpBuy = expenses?.filter((e) => e.category === "Beli Produk").reduce((s, r) => s + r.amount, 0) ?? 0;
+  const totalExpenses = totalExpOps + totalExpBuy;
+  const selisih = totalSales - totalExpenses;
 
   // Weekly sales trend (last 7 days)
   const weeklyData = (() => {
@@ -64,29 +66,67 @@ export default function Dashboard() {
   ];
   const PIE_COLORS = ["hsl(347, 77%, 50%)", "hsl(30, 80%, 55%)"];
 
-  const summaryCards = [
-    { title: "Total Penjualan", value: totalSales, icon: ShoppingCart, color: "text-primary" },
-    { title: "Total Keuntungan", value: totalProfit, icon: TrendingUp, color: "text-emerald" },
-    { title: "Pengeluaran Operasional", value: totalExpOps, icon: Wallet, color: "text-rose" },
-    { title: "Pengeluaran Beli Produk", value: totalExpBuy, icon: Package, color: "text-rose" },
-  ];
-
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">Dashboard</h1>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {summaryCards.map((c) => (
-          <Card key={c.title}>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">{c.title}</CardTitle>
-              <c.icon className={`h-5 w-5 ${c.color}`} />
-            </CardHeader>
-            <CardContent>
-              <p className={`text-2xl font-bold ${c.color}`}>{formatRupiah(c.value)}</p>
-            </CardContent>
-          </Card>
-        ))}
+        {/* Total Penjualan */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Total Penjualan</CardTitle>
+            <ShoppingCart className="h-5 w-5 text-primary" />
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold text-primary">{formatRupiah(totalSales)}</p>
+          </CardContent>
+        </Card>
+
+        {/* Total Keuntungan */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Total Keuntungan</CardTitle>
+            <TrendingUp className="h-5 w-5 text-emerald" />
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold text-emerald">{formatRupiah(totalProfit)}</p>
+          </CardContent>
+        </Card>
+
+        {/* Total Pengeluaran (merged with sub-items) */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Total Pengeluaran</CardTitle>
+            <Wallet className="h-5 w-5 text-rose" />
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold text-rose">{formatRupiah(totalExpenses)}</p>
+            <div className="mt-2 space-y-1 text-sm">
+              <div className="flex justify-between text-muted-foreground">
+                <span>Operasional</span>
+                <span>{formatRupiah(totalExpOps)}</span>
+              </div>
+              <div className="flex justify-between text-muted-foreground">
+                <span>Beli Produk</span>
+                <span>{formatRupiah(totalExpBuy)}</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Selisih */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Selisih</CardTitle>
+            <BarChart3 className={`h-5 w-5 ${selisih >= 0 ? "text-emerald" : "text-rose"}`} />
+          </CardHeader>
+          <CardContent>
+            <p className={`text-2xl font-bold ${selisih >= 0 ? "text-emerald" : "text-rose"}`}>
+              {formatRupiah(selisih)}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">Penjualan − Pengeluaran</p>
+          </CardContent>
+        </Card>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
