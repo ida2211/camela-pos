@@ -121,6 +121,13 @@ export default function Pengeluaran() {
         </Button>
       </div>
 
+      <Card className="border-rose/20 bg-rose/5">
+        <CardContent className="flex items-center justify-between py-4">
+          <span className="text-sm font-medium text-muted-foreground">Total Pengeluaran</span>
+          <span className="text-xl font-bold text-rose">{formatRupiah(expenses.reduce((s, r) => s + r.amount, 0))}</span>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader className="pb-3">
           <div className="relative max-w-sm">

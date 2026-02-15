@@ -3,23 +3,22 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatRupiah } from "@/lib/format";
 import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
+import {
   ShoppingCart,
   TrendingUp,
   Wallet,
   BarChart3,
+  Trophy,
 } from "lucide-react";
 import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
   PieChart,
   Pie,
   Cell,
   Legend,
+  Tooltip,
+  ResponsiveContainer,
 } from "recharts";
 
 export default function Dashboard() {
@@ -39,6 +38,14 @@ export default function Dashboard() {
     },
   });
 
+  const { data: saleItems } = useQuery({
+    queryKey: ["sale_items"],
+    queryFn: async () => {
+      const { data } = await supabase.from("sale_items").select("*");
+      return data ?? [];
+    },
+  });
+
   const totalSales = sales?.reduce((s, r) => s + r.total, 0) ?? 0;
   const totalProfit = sales?.reduce((s, r) => s + r.profit, 0) ?? 0;
   const totalExpOps = expenses?.filter((e) => e.category === "Operasional").reduce((s, r) => s + r.amount, 0) ?? 0;
@@ -46,18 +53,20 @@ export default function Dashboard() {
   const totalExpenses = totalExpOps + totalExpBuy;
   const selisih = totalSales - totalExpenses;
 
-  // Weekly sales trend (last 7 days)
-  const weeklyData = (() => {
-    const days: { label: string; total: number }[] = [];
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      const dateStr = d.toISOString().split("T")[0];
-      const label = new Intl.DateTimeFormat("id-ID", { weekday: "short" }).format(d);
-      const total = sales?.filter((s) => s.created_at.startsWith(dateStr)).reduce((sum, s) => sum + s.total, 0) ?? 0;
-      days.push({ label, total });
+  // Top 10 best-selling products
+  const topProducts = (() => {
+    if (!saleItems) return [];
+    const map = new Map<string, { name: string; qty: number; total: number }>();
+    for (const item of saleItems) {
+      const existing = map.get(item.product_id);
+      if (existing) {
+        existing.qty += item.qty;
+        existing.total += item.subtotal;
+      } else {
+        map.set(item.product_id, { name: item.product_name, qty: item.qty, total: item.subtotal });
+      }
     }
-    return days;
+    return Array.from(map.values()).sort((a, b) => b.qty - a.qty).slice(0, 10);
   })();
 
   const pieData = [
@@ -71,7 +80,6 @@ export default function Dashboard() {
       <h1 className="text-2xl font-bold">Dashboard</h1>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {/* Total Penjualan */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Total Penjualan</CardTitle>
@@ -82,10 +90,9 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        {/* Total Keuntungan */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total Keuntungan</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Profit Penjualan</CardTitle>
             <TrendingUp className="h-5 w-5 text-emerald" />
           </CardHeader>
           <CardContent>
@@ -93,7 +100,6 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        {/* Total Pengeluaran (merged with sub-items) */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Total Pengeluaran</CardTitle>
@@ -114,10 +120,9 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        {/* Selisih */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Selisih</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Keuntungan Bersih / Selisih</CardTitle>
             <BarChart3 className={`h-5 w-5 ${selisih >= 0 ? "text-emerald" : "text-rose"}`} />
           </CardHeader>
           <CardContent>
@@ -131,19 +136,39 @@ export default function Dashboard() {
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Tren Penjualan Mingguan</CardTitle>
+          <CardHeader className="flex flex-row items-center gap-2">
+            <Trophy className="h-5 w-5 text-amber-500" />
+            <CardTitle className="text-base">10 Produk Terlaris</CardTitle>
           </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={weeklyData}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                <XAxis dataKey="label" className="text-xs" />
-                <YAxis className="text-xs" tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
-                <Tooltip formatter={(v: number) => formatRupiah(v)} />
-                <Bar dataKey="total" fill="hsl(160, 84%, 39%)" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-10">#</TableHead>
+                  <TableHead>Produk</TableHead>
+                  <TableHead className="text-right">Terjual</TableHead>
+                  <TableHead className="text-right">Pendapatan</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {topProducts.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                      Belum ada data penjualan
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  topProducts.map((p, i) => (
+                    <TableRow key={i}>
+                      <TableCell className="font-semibold text-muted-foreground">{i + 1}</TableCell>
+                      <TableCell className="font-medium">{p.name}</TableCell>
+                      <TableCell className="text-right">{p.qty}</TableCell>
+                      <TableCell className="text-right">{formatRupiah(p.total)}</TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
           </CardContent>
         </Card>
 
