@@ -178,6 +178,13 @@ export default function Penjualan() {
         </Button>
       </div>
 
+      <Card className="border-primary/20 bg-primary/5">
+        <CardContent className="flex items-center justify-between py-4">
+          <span className="text-sm font-medium text-muted-foreground">Total Penjualan</span>
+          <span className="text-xl font-bold text-primary">{formatRupiah(sales.reduce((s, r) => s + r.total, 0))}</span>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader className="pb-3">
           <div className="relative max-w-sm">

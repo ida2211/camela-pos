@@ -18,7 +18,7 @@ import {
 import {
   Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList,
 } from "@/components/ui/command";
-import { Plus, Search, Pencil, Trash2, PackagePlus, ChevronsUpDown, Check } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, PackagePlus, PackageMinus, ChevronsUpDown, Check } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import type { Tables } from "@/integrations/supabase/types";
@@ -40,6 +40,13 @@ export default function StokBarang() {
   const [selectedProductId, setSelectedProductId] = useState("");
   const [stockQty, setStockQty] = useState("");
 
+  // Reduce stock dialog
+  const [reduceDialogOpen, setReduceDialogOpen] = useState(false);
+  const [reduceComboOpen, setReduceComboOpen] = useState(false);
+  const [reduceProductId, setReduceProductId] = useState("");
+  const [reduceQty, setReduceQty] = useState("");
+  const [reduceReason, setReduceReason] = useState("");
+
   const { data: products = [] } = useQuery({
     queryKey: ["products"],
     queryFn: async () => {
@@ -48,7 +55,7 @@ export default function StokBarang() {
     },
   });
 
-  // Save master product (no stock field)
+  // Save master product
   const saveMut = useMutation({
     mutationFn: async () => {
       const payload = {
@@ -78,10 +85,7 @@ export default function StokBarang() {
       const qty = Number(stockQty);
       if (qty <= 0) throw new Error("Qty harus lebih dari 0");
 
-      // Update stock
       await supabase.from("products").update({ stock: product.stock + qty }).eq("id", product.id);
-
-      // Auto-create expense
       await supabase.from("expenses").insert({
         name: `Beli Produk: ${product.name}`,
         amount: product.buy_price * qty,
@@ -96,6 +100,40 @@ export default function StokBarang() {
       setSelectedProductId("");
       setStockQty("");
       toast.success("Stok berhasil ditambahkan & pengeluaran tercatat");
+    },
+  });
+
+  // Reduce stock mutation
+  const reduceStockMut = useMutation({
+    mutationFn: async () => {
+      const product = products.find((p) => p.id === reduceProductId);
+      if (!product) throw new Error("Produk tidak ditemukan");
+      const qty = Number(reduceQty);
+      if (qty <= 0) throw new Error("Qty harus lebih dari 0");
+      if (qty > product.stock) throw new Error("Qty melebihi stok yang tersedia");
+
+      await supabase.from("products").update({ stock: product.stock - qty }).eq("id", product.id);
+
+      // Cari & hapus/kurangi pengeluaran terkait beli produk
+      const refundAmount = product.buy_price * qty;
+      await supabase.from("expenses").insert({
+        name: `Koreksi Stok: ${product.name}`,
+        amount: -refundAmount,
+        category: "Beli Produk",
+        note: reduceReason || `Kurangi ${qty} unit (koreksi input)`,
+      });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["products"] });
+      qc.invalidateQueries({ queryKey: ["expenses"] });
+      setReduceDialogOpen(false);
+      setReduceProductId("");
+      setReduceQty("");
+      setReduceReason("");
+      toast.success("Stok dikurangi & pengeluaran dikoreksi");
+    },
+    onError: (err) => {
+      toast.error(err.message);
     },
   });
 
@@ -117,11 +155,7 @@ export default function StokBarang() {
 
   const openEdit = (p: Product) => {
     setEditing(p);
-    setForm({
-      name: p.name,
-      buy_price: String(p.buy_price),
-      sell_price: String(p.sell_price),
-    });
+    setForm({ name: p.name, buy_price: String(p.buy_price), sell_price: String(p.sell_price) });
     setProductDialogOpen(true);
   };
 
@@ -130,12 +164,16 @@ export default function StokBarang() {
   );
 
   const selectedProduct = products.find((p) => p.id === selectedProductId);
+  const reduceProduct = products.find((p) => p.id === reduceProductId);
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-bold">Stok Barang</h1>
         <div className="flex gap-2">
+          <Button variant="outline" className="text-destructive border-destructive/30" onClick={() => setReduceDialogOpen(true)}>
+            <PackageMinus className="mr-2 h-4 w-4" /> Kurangi Stok
+          </Button>
           <Button variant="outline" onClick={() => setStockDialogOpen(true)}>
             <PackagePlus className="mr-2 h-4 w-4" /> Tambah Stok
           </Button>
@@ -149,12 +187,7 @@ export default function StokBarang() {
         <CardHeader className="pb-3">
           <div className="relative max-w-sm">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Cari produk..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9"
-            />
+            <Input placeholder="Cari produk..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
           </div>
         </CardHeader>
         <CardContent className="p-0">
@@ -240,7 +273,7 @@ export default function StokBarang() {
         </DialogContent>
       </Dialog>
 
-      {/* Add Stock Dialog with Combobox */}
+      {/* Add Stock Dialog */}
       <Dialog open={stockDialogOpen} onOpenChange={setStockDialogOpen}>
         <DialogContent>
           <DialogHeader>
@@ -251,12 +284,7 @@ export default function StokBarang() {
               <Label>Pilih Barang</Label>
               <Popover open={comboOpen} onOpenChange={setComboOpen}>
                 <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    role="combobox"
-                    aria-expanded={comboOpen}
-                    className="w-full justify-between font-normal"
-                  >
+                  <Button variant="outline" role="combobox" aria-expanded={comboOpen} className="w-full justify-between font-normal">
                     {selectedProduct ? selectedProduct.name : "Cari & pilih barang..."}
                     <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                   </Button>
@@ -268,25 +296,11 @@ export default function StokBarang() {
                       <CommandEmpty>Barang tidak ditemukan.</CommandEmpty>
                       <CommandGroup>
                         {products.map((p) => (
-                          <CommandItem
-                            key={p.id}
-                            value={p.name}
-                            onSelect={() => {
-                              setSelectedProductId(p.id);
-                              setComboOpen(false);
-                            }}
-                          >
-                            <Check
-                              className={cn(
-                                "mr-2 h-4 w-4",
-                                selectedProductId === p.id ? "opacity-100" : "opacity-0"
-                              )}
-                            />
+                          <CommandItem key={p.id} value={p.name} onSelect={() => { setSelectedProductId(p.id); setComboOpen(false); }}>
+                            <Check className={cn("mr-2 h-4 w-4", selectedProductId === p.id ? "opacity-100" : "opacity-0")} />
                             <div className="flex flex-col">
                               <span>{p.name}</span>
-                              <span className="text-xs text-muted-foreground">
-                                Stok: {p.stock} · Harga Beli: {formatRupiah(p.buy_price)}
-                              </span>
+                              <span className="text-xs text-muted-foreground">Stok: {p.stock} · Harga Beli: {formatRupiah(p.buy_price)}</span>
                             </div>
                           </CommandItem>
                         ))}
@@ -298,13 +312,7 @@ export default function StokBarang() {
             </div>
             <div>
               <Label>Jumlah (Qty) Tambahan</Label>
-              <Input
-                type="number"
-                min="1"
-                value={stockQty}
-                onChange={(e) => setStockQty(e.target.value)}
-                placeholder="Masukkan jumlah"
-              />
+              <Input type="number" min="1" value={stockQty} onChange={(e) => setStockQty(e.target.value)} placeholder="Masukkan jumlah" />
             </div>
             {selectedProduct && Number(stockQty) > 0 && (
               <div className="rounded-lg border bg-muted/50 p-3 text-sm space-y-1">
@@ -316,18 +324,88 @@ export default function StokBarang() {
                   <span>Total Pengeluaran</span>
                   <span className="text-rose-500">{formatRupiah(selectedProduct.buy_price * Number(stockQty))}</span>
                 </div>
-                <p className="text-xs text-muted-foreground pt-1">
-                  * Akan otomatis tercatat di Pengeluaran (kategori "Beli Produk")
-                </p>
+                <p className="text-xs text-muted-foreground pt-1">* Akan otomatis tercatat di Pengeluaran (kategori "Beli Produk")</p>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button onClick={() => addStockMut.mutate()} disabled={addStockMut.isPending || !selectedProductId || !stockQty || Number(stockQty) <= 0}>
+              {addStockMut.isPending ? "Menyimpan..." : "Tambah Stok"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reduce Stock Dialog */}
+      <Dialog open={reduceDialogOpen} onOpenChange={setReduceDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Kurangi Stok Barang</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Pilih Barang</Label>
+              <Popover open={reduceComboOpen} onOpenChange={setReduceComboOpen}>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" role="combobox" aria-expanded={reduceComboOpen} className="w-full justify-between font-normal">
+                    {reduceProduct ? reduceProduct.name : "Cari & pilih barang..."}
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder="Ketik nama barang..." />
+                    <CommandList>
+                      <CommandEmpty>Barang tidak ditemukan.</CommandEmpty>
+                      <CommandGroup>
+                        {products.filter((p) => p.stock > 0).map((p) => (
+                          <CommandItem key={p.id} value={p.name} onSelect={() => { setReduceProductId(p.id); setReduceComboOpen(false); }}>
+                            <Check className={cn("mr-2 h-4 w-4", reduceProductId === p.id ? "opacity-100" : "opacity-0")} />
+                            <div className="flex flex-col">
+                              <span>{p.name}</span>
+                              <span className="text-xs text-muted-foreground">Stok: {p.stock}</span>
+                            </div>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            </div>
+            <div>
+              <Label>Jumlah (Qty) Pengurangan</Label>
+              <Input type="number" min="1" max={reduceProduct?.stock ?? 0} value={reduceQty} onChange={(e) => setReduceQty(e.target.value)} placeholder="Masukkan jumlah" />
+            </div>
+            <div>
+              <Label>Alasan Pengurangan</Label>
+              <Input value={reduceReason} onChange={(e) => setReduceReason(e.target.value)} placeholder="Contoh: salah input jumlah stok" />
+            </div>
+            {reduceProduct && Number(reduceQty) > 0 && (
+              <div className="rounded-lg border bg-muted/50 p-3 text-sm space-y-1">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Stok saat ini</span>
+                  <span>{reduceProduct.stock}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Setelah dikurangi</span>
+                  <span className="font-semibold">{reduceProduct.stock - Number(reduceQty)}</span>
+                </div>
+                <div className="flex justify-between font-semibold">
+                  <span>Koreksi Pengeluaran</span>
+                  <span className="text-emerald-500">-{formatRupiah(reduceProduct.buy_price * Number(reduceQty))}</span>
+                </div>
+                <p className="text-xs text-muted-foreground pt-1">* Pengeluaran akan dikoreksi otomatis</p>
               </div>
             )}
           </div>
           <DialogFooter>
             <Button
-              onClick={() => addStockMut.mutate()}
-              disabled={addStockMut.isPending || !selectedProductId || !stockQty || Number(stockQty) <= 0}
+              variant="destructive"
+              onClick={() => reduceStockMut.mutate()}
+              disabled={reduceStockMut.isPending || !reduceProductId || !reduceQty || Number(reduceQty) <= 0 || Number(reduceQty) > (reduceProduct?.stock ?? 0)}
             >
-              {addStockMut.isPending ? "Menyimpan..." : "Tambah Stok"}
+              {reduceStockMut.isPending ? "Memproses..." : "Kurangi Stok"}
             </Button>
           </DialogFooter>
         </DialogContent>
