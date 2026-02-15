@@ -181,7 +181,17 @@ export default function StokBarang() {
                     <TableCell className="font-medium">{p.name}</TableCell>
                     <TableCell className="text-right">{formatRupiah(p.buy_price)}</TableCell>
                     <TableCell className="text-right">{formatRupiah(p.sell_price)}</TableCell>
-                    <TableCell className="text-right">{p.stock}</TableCell>
+                    <TableCell className="text-right">
+                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${
+                        p.stock === 0
+                          ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                          : p.stock < 5
+                            ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
+                            : "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                      }`}>
+                        {p.stock}
+                      </span>
+                    </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
                         <Button variant="ghost" size="icon" onClick={() => openEdit(p)}>
