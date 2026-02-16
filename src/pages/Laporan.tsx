@@ -5,7 +5,13 @@ import { formatRupiah } from "@/lib/format";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { TrendingUp, TrendingDown, DollarSign, Calculator } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from "@/components/ui/dialog";
+import { TrendingUp, TrendingDown, DollarSign, Calculator, Download } from "lucide-react";
+import { toast } from "sonner";
 
 export default function Laporan() {
   const today = new Date();
@@ -14,6 +20,13 @@ export default function Laporan() {
 
   const [startDate, setStartDate] = useState(firstDay);
   const [endDate, setEndDate] = useState(lastDay);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportOptions, setExportOptions] = useState({
+    stok: false,
+    penjualan: false,
+    pengeluaran: false,
+    keuangan: false,
+  });
 
   const { data: sales = [] } = useQuery({
     queryKey: ["sales"],
@@ -27,6 +40,22 @@ export default function Laporan() {
     queryKey: ["expenses"],
     queryFn: async () => {
       const { data } = await supabase.from("expenses").select("*");
+      return data ?? [];
+    },
+  });
+
+  const { data: products = [] } = useQuery({
+    queryKey: ["products"],
+    queryFn: async () => {
+      const { data } = await supabase.from("products").select("*").order("name");
+      return data ?? [];
+    },
+  });
+
+  const { data: saleItems = [] } = useQuery({
+    queryKey: ["sale_items"],
+    queryFn: async () => {
+      const { data } = await supabase.from("sale_items").select("*");
       return data ?? [];
     },
   });
@@ -46,12 +75,67 @@ export default function Laporan() {
   const totalExpOps = filteredExpenses.filter((e) => e.category === "Operasional").reduce((s, r) => s + r.amount, 0);
   const totalExpBuy = filteredExpenses.filter((e) => e.category === "Beli Produk").reduce((s, r) => s + r.amount, 0);
   const totalPengeluaran = totalExpOps + totalExpBuy;
-  // Laba bersih = Total Penjualan - Total Pengeluaran (semua)
   const labaBersih = totalPendapatan - totalPengeluaran;
+
+  const toggleExport = (key: keyof typeof exportOptions) => {
+    setExportOptions((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const downloadCSV = (filename: string, headers: string[], rows: string[][]) => {
+    const csv = [headers.join(","), ...rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(","))].join("\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExport = () => {
+    const selected = Object.entries(exportOptions).filter(([, v]) => v).map(([k]) => k);
+    if (selected.length === 0) {
+      toast.error("Pilih minimal satu data untuk di-export");
+      return;
+    }
+
+    if (exportOptions.stok) {
+      downloadCSV(`stok_barang_${endDate}.csv`, ["Nama Produk", "Harga Beli", "Harga Jual", "Stok", "Total Modal"], products.map((p) => [p.name, String(p.buy_price), String(p.sell_price), String(p.stock), String(p.buy_price * p.stock)]));
+    }
+
+    if (exportOptions.penjualan) {
+      downloadCSV(`penjualan_${startDate}_${endDate}.csv`, ["Tanggal", "Customer", "Total", "Modal", "Profit"], filteredSales.map((s) => [s.created_at.split("T")[0], s.customer_name, String(s.total), String(s.cost), String(s.profit)]));
+    }
+
+    if (exportOptions.pengeluaran) {
+      downloadCSV(`pengeluaran_${startDate}_${endDate}.csv`, ["Tanggal", "Nama", "Kategori", "Nominal", "Catatan"], filteredExpenses.map((e) => [e.expense_date, e.name, e.category, String(e.amount), e.note ?? ""]));
+    }
+
+    if (exportOptions.keuangan) {
+      const rows: string[][] = [
+        ["Total Penjualan (Omzet)", String(totalPendapatan)],
+        ["Modal / HPP", String(totalCost)],
+        ["Profit Penjualan (Laba Kotor)", String(totalProfit)],
+        ["Pengeluaran Operasional", String(totalExpOps)],
+        ["Pengeluaran Beli Produk", String(totalExpBuy)],
+        ["Total Pengeluaran", String(totalPengeluaran)],
+        ["Keuntungan Bersih", String(labaBersih)],
+      ];
+      downloadCSV(`laporan_keuangan_${startDate}_${endDate}.csv`, ["Keterangan", "Nominal"], rows);
+    }
+
+    toast.success(`${selected.length} file berhasil di-export`);
+    setExportOpen(false);
+  };
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Laporan Keuangan</h1>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="text-2xl font-bold">Laporan Keuangan</h1>
+        <Button onClick={() => setExportOpen(true)}>
+          <Download className="mr-2 h-4 w-4" /> Export Data
+        </Button>
+      </div>
 
       <Card>
         <CardContent className="pt-6">
@@ -112,7 +196,6 @@ export default function Laporan() {
           <CardTitle className="text-base">Rincian Perhitungan</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Penjualan */}
           <div className="space-y-2">
             <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Penjualan</h3>
             <div className="flex justify-between">
@@ -129,7 +212,6 @@ export default function Laporan() {
             </div>
           </div>
 
-          {/* Pengeluaran */}
           <div className="space-y-2">
             <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Pengeluaran</h3>
             <div className="flex justify-between">
@@ -146,7 +228,6 @@ export default function Laporan() {
             </div>
           </div>
 
-          {/* Keuntungan Bersih */}
           <div className="rounded-lg border-2 border-primary/20 bg-primary/5 p-4">
             <div className="flex justify-between items-center">
               <div>
@@ -160,6 +241,54 @@ export default function Laporan() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Export Dialog */}
+      <Dialog open={exportOpen} onOpenChange={setExportOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Export Data</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Pilih data yang ingin di-export sebagai file CSV. Data penjualan, pengeluaran, dan keuangan akan mengikuti filter tanggal ({startDate} s/d {endDate}).
+          </p>
+          <div className="space-y-4 py-2">
+            <div className="flex items-center space-x-3">
+              <Checkbox id="exp-stok" checked={exportOptions.stok} onCheckedChange={() => toggleExport("stok")} />
+              <Label htmlFor="exp-stok" className="cursor-pointer">
+                <span className="font-medium">Data Stok Barang</span>
+                <p className="text-xs text-muted-foreground">Daftar produk, harga, stok, dan total modal</p>
+              </Label>
+            </div>
+            <div className="flex items-center space-x-3">
+              <Checkbox id="exp-penjualan" checked={exportOptions.penjualan} onCheckedChange={() => toggleExport("penjualan")} />
+              <Label htmlFor="exp-penjualan" className="cursor-pointer">
+                <span className="font-medium">Data Penjualan</span>
+                <p className="text-xs text-muted-foreground">Riwayat penjualan sesuai rentang tanggal</p>
+              </Label>
+            </div>
+            <div className="flex items-center space-x-3">
+              <Checkbox id="exp-pengeluaran" checked={exportOptions.pengeluaran} onCheckedChange={() => toggleExport("pengeluaran")} />
+              <Label htmlFor="exp-pengeluaran" className="cursor-pointer">
+                <span className="font-medium">Data Pengeluaran</span>
+                <p className="text-xs text-muted-foreground">Riwayat pengeluaran sesuai rentang tanggal</p>
+              </Label>
+            </div>
+            <div className="flex items-center space-x-3">
+              <Checkbox id="exp-keuangan" checked={exportOptions.keuangan} onCheckedChange={() => toggleExport("keuangan")} />
+              <Label htmlFor="exp-keuangan" className="cursor-pointer">
+                <span className="font-medium">Ringkasan Keuangan</span>
+                <p className="text-xs text-muted-foreground">Laporan ringkasan omzet, pengeluaran, dan laba bersih</p>
+              </Label>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setExportOpen(false)}>Batal</Button>
+            <Button onClick={handleExport}>
+              <Download className="mr-2 h-4 w-4" /> Export
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
