@@ -24,8 +24,9 @@ type Expense = Tables<"expenses">;
 export default function Pengeluaran() {
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState<"all" | "Operasional" | "Beli Produk">("all");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState({
     name: "",
@@ -112,10 +113,13 @@ export default function Pengeluaran() {
 
   const filtered = expenses.filter((e) => {
     const matchesSearch = e.name.toLowerCase().includes(search.toLowerCase());
-    const matchesStartDate = !startDate || e.expense_date >= startDate;
-    const matchesEndDate = !endDate || e.expense_date <= endDate;
-    return matchesSearch && matchesStartDate && matchesEndDate;
+    const matchesDateFrom = !dateFrom || e.expense_date >= dateFrom;
+    const matchesDateTo = !dateTo || e.expense_date <= dateTo;
+    const matchesCategory = categoryFilter === "all" || e.category === categoryFilter;
+    return matchesSearch && matchesDateFrom && matchesDateTo && matchesCategory;
   });
+
+  const totalFiltered = filtered.reduce((s, r) => s + r.amount, 0);
 
   return (
     <div className="space-y-6">
@@ -128,51 +132,45 @@ export default function Pengeluaran() {
 
       <Card className="border-rose/20 bg-rose/5">
         <CardContent className="flex items-center justify-between py-4">
-          <span className="text-sm font-medium text-muted-foreground">
-            Total Pengeluaran {startDate || endDate ? "(Filter)" : ""}
-          </span>
-          <span className="text-xl font-bold text-rose">{formatRupiah(filtered.reduce((s, r) => s + r.amount, 0))}</span>
+          <div>
+            <span className="text-sm font-medium text-muted-foreground">Total Pengeluaran</span>
+            <span className="text-xs text-muted-foreground ml-2">
+              ({filtered.length} dari {expenses.length} data)
+            </span>
+          </div>
+          <span className="text-xl font-bold text-rose">{formatRupiah(totalFiltered)}</span>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader className="pb-3">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="relative max-w-sm">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+            <div className="relative max-w-sm flex-1">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input placeholder="Cari pengeluaran..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
             </div>
-            <div className="flex gap-2 items-center">
-              <div className="flex items-center gap-2">
-                <Label className="text-sm">Dari:</Label>
-                <Input 
-                  type="date" 
-                  value={startDate} 
-                  onChange={(e) => setStartDate(e.target.value)} 
-                  className="w-auto"
-                />
+            <div className="flex gap-2">
+              <div>
+                <Label className="text-xs">Dari Tanggal</Label>
+                <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="w-40" />
               </div>
-              <div className="flex items-center gap-2">
-                <Label className="text-sm">Sampai:</Label>
-                <Input 
-                  type="date" 
-                  value={endDate} 
-                  onChange={(e) => setEndDate(e.target.value)} 
-                  className="w-auto"
-                />
+              <div>
+                <Label className="text-xs">Sampai Tanggal</Label>
+                <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="w-40" />
               </div>
-              {(startDate || endDate) && (
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  onClick={() => {
-                    setStartDate("");
-                    setEndDate("");
-                  }}
-                >
-                  Reset
-                </Button>
-              )}
+              <div>
+                <Label className="text-xs">Kategori</Label>
+                <Select value={categoryFilter} onValueChange={(v) => setCategoryFilter(v as typeof categoryFilter)}>
+                  <SelectTrigger className="w-32">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Semua</SelectItem>
+                    <SelectItem value="Operasional">Operasional</SelectItem>
+                    <SelectItem value="Beli Produk">Beli Produk</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
         </CardHeader>

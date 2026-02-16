@@ -1,0 +1,19 @@
+<svg width="200" height="200" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background hitam -->
+  <rect width="200" height="200" fill="#000000"/>
+  
+  <!-- Logo bunga di bagian atas -->
+  <path d="M100 30 C85 30 75 40 75 55 C75 65 80 70 85 70 C90 70 95 65 100 60 C105 65 110 70 120 70 C125 70 130 65 125 55 C130 40 115 30 100 30Z" fill="#FFFFFF"/>
+  
+  <!-- Lingkaran kecil di tengah bunga -->
+  <circle cx="100" cy="55" r="8" fill="#000000"/>
+  
+  <!-- Tulisan CAMELA -->
+  <text x="100" y="110" font-family="Arial, sans-serif" font-size="24" font-weight="bold" text-anchor="middle" fill="#FFFFFF">CAMELA</text>
+  
+  <!-- Tulisan OUTWEAR -->
+  <text x="100" y="140" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="#FFFFFF">OUTWEAR</text>
+  
+  <!-- Garis dekoratif -->
+  <line x1="60" y1="150" x2="140" y2="150" stroke="#FFFFFF" stroke-width="2"/>
+</svg>
