@@ -24,6 +24,8 @@ type Expense = Tables<"expenses">;
 export default function Pengeluaran() {
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState({
     name: "",
@@ -108,9 +110,12 @@ export default function Pengeluaran() {
     setEditOpen(true);
   };
 
-  const filtered = expenses.filter((e) =>
-    e.name.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = expenses.filter((e) => {
+    const matchesSearch = e.name.toLowerCase().includes(search.toLowerCase());
+    const matchesStartDate = !startDate || e.expense_date >= startDate;
+    const matchesEndDate = !endDate || e.expense_date <= endDate;
+    return matchesSearch && matchesStartDate && matchesEndDate;
+  });
 
   return (
     <div className="space-y-6">
@@ -123,16 +128,52 @@ export default function Pengeluaran() {
 
       <Card className="border-rose/20 bg-rose/5">
         <CardContent className="flex items-center justify-between py-4">
-          <span className="text-sm font-medium text-muted-foreground">Total Pengeluaran</span>
-          <span className="text-xl font-bold text-rose">{formatRupiah(expenses.reduce((s, r) => s + r.amount, 0))}</span>
+          <span className="text-sm font-medium text-muted-foreground">
+            Total Pengeluaran {startDate || endDate ? "(Filter)" : ""}
+          </span>
+          <span className="text-xl font-bold text-rose">{formatRupiah(filtered.reduce((s, r) => s + r.amount, 0))}</span>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader className="pb-3">
-          <div className="relative max-w-sm">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input placeholder="Cari pengeluaran..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="relative max-w-sm">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input placeholder="Cari pengeluaran..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+            </div>
+            <div className="flex gap-2 items-center">
+              <div className="flex items-center gap-2">
+                <Label className="text-sm">Dari:</Label>
+                <Input 
+                  type="date" 
+                  value={startDate} 
+                  onChange={(e) => setStartDate(e.target.value)} 
+                  className="w-auto"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <Label className="text-sm">Sampai:</Label>
+                <Input 
+                  type="date" 
+                  value={endDate} 
+                  onChange={(e) => setEndDate(e.target.value)} 
+                  className="w-auto"
+                />
+              </div>
+              {(startDate || endDate) && (
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => {
+                    setStartDate("");
+                    setEndDate("");
+                  }}
+                >
+                  Reset
+                </Button>
+              )}
+            </div>
           </div>
         </CardHeader>
         <CardContent className="p-0">
