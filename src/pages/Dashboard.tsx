@@ -23,6 +23,14 @@ import {
 } from "recharts";
 
 export default function Dashboard() {
+  const { data: products } = useQuery({
+    queryKey: ["products"],
+    queryFn: async () => {
+      const { data } = await supabase.from("products").select("*");
+      return data ?? [];
+    },
+  });
+
   const { data: sales } = useQuery({
     queryKey: ["sales"],
     queryFn: async () => {
@@ -47,23 +55,13 @@ export default function Dashboard() {
     },
   });
 
-  const { data: products } = useQuery({
-    queryKey: ["products"],
-    queryFn: async () => {
-      const { data } = await supabase.from("products").select("*");
-      return data ?? [];
-    },
-  });
-
   const totalSales = sales?.reduce((s, r) => s + r.total, 0) ?? 0;
   const totalProfit = sales?.reduce((s, r) => s + r.profit, 0) ?? 0;
+  const totalModalStok = products?.reduce((s, p) => s + p.buy_price * p.stock, 0) ?? 0;
   const totalExpOps = expenses?.filter((e) => e.category === "Operasional").reduce((s, r) => s + r.amount, 0) ?? 0;
   const totalExpBuy = expenses?.filter((e) => e.category === "Beli Produk").reduce((s, r) => s + r.amount, 0) ?? 0;
   const totalExpenses = totalExpOps + totalExpBuy;
   const selisih = totalSales - totalExpenses;
-  
-  // Total modal produk yang tersisa (stok × harga beli)
-  const totalModalTersisa = products?.reduce((total, product) => total + (product.stock * product.buy_price), 0) ?? 0;
 
   // Top 10 best-selling products
   const topProducts = (() => {
@@ -114,6 +112,17 @@ export default function Dashboard() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Modal Produk Tersisa</CardTitle>
+            <Package className="h-5 w-5 text-amber-500" />
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold text-amber-500">{formatRupiah(totalModalStok)}</p>
+            <p className="text-xs text-muted-foreground mt-1">{products?.filter(p => p.stock > 0).length ?? 0} produk tersedia</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Total Pengeluaran</CardTitle>
             <Wallet className="h-5 w-5 text-rose" />
           </CardHeader>
@@ -129,17 +138,6 @@ export default function Dashboard() {
                 <span>{formatRupiah(totalExpBuy)}</span>
               </div>
             </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Modal Produk Tersisa</CardTitle>
-            <Package className="h-5 w-5 text-blue" />
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-blue">{formatRupiah(totalModalTersisa)}</p>
-            <p className="text-xs text-muted-foreground mt-1">Total stok × harga beli</p>
           </CardContent>
         </Card>
 
