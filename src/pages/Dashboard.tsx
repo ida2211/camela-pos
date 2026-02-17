@@ -58,6 +58,8 @@ export default function Dashboard() {
   const totalSales = sales?.reduce((s, r) => s + r.total, 0) ?? 0;
   const totalProfit = sales?.reduce((s, r) => s + r.profit, 0) ?? 0;
   const totalModalStok = products?.reduce((s, p) => s + p.buy_price * p.stock, 0) ?? 0;
+  const totalSellStok = products?.reduce((s, p) => s + p.sell_price * p.stock, 0) ?? 0;
+  const estimatedProfit = totalSellStok - totalModalStok;
   const totalExpOps = expenses?.filter((e) => e.category === "Operasional").reduce((s, r) => s + r.amount, 0) ?? 0;
   const totalExpBuy = expenses?.filter((e) => e.category === "Beli Produk").reduce((s, r) => s + r.amount, 0) ?? 0;
   const totalExpenses = totalExpOps + totalExpBuy;
@@ -89,7 +91,7 @@ export default function Dashboard() {
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">Dashboard</h1>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Total Penjualan</CardTitle>
@@ -97,16 +99,10 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold text-primary">{formatRupiah(totalSales)}</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Profit Penjualan</CardTitle>
-            <TrendingUp className="h-5 w-5 text-emerald" />
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-emerald">{formatRupiah(totalProfit)}</p>
+            <div className="mt-2 flex justify-between text-sm text-muted-foreground">
+              <span>Profit</span>
+              <span className="font-semibold text-emerald">{formatRupiah(totalProfit)}</span>
+            </div>
           </CardContent>
         </Card>
 
@@ -118,6 +114,10 @@ export default function Dashboard() {
           <CardContent>
             <p className="text-2xl font-bold text-amber-500">{formatRupiah(totalModalStok)}</p>
             <p className="text-xs text-muted-foreground mt-1">{products?.filter(p => p.stock > 0).length ?? 0} produk tersedia</p>
+            <div className="mt-2 flex justify-between text-sm text-muted-foreground">
+              <span>Harga Jual</span>
+              <span className="font-semibold text-primary">{formatRupiah(totalSellStok)}</span>
+            </div>
           </CardContent>
         </Card>
 
@@ -143,7 +143,7 @@ export default function Dashboard() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Keuntungan Bersih / Selisih</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Total Keuntungan</CardTitle>
             <BarChart3 className={`h-5 w-5 ${selisih >= 0 ? "text-emerald" : "text-rose"}`} />
           </CardHeader>
           <CardContent>
@@ -151,6 +151,10 @@ export default function Dashboard() {
               {formatRupiah(selisih)}
             </p>
             <p className="text-xs text-muted-foreground mt-1">Penjualan − Pengeluaran</p>
+            <div className="mt-2 flex justify-between text-sm text-muted-foreground">
+              <span>Estimasi jika laku semua</span>
+              <span className="font-semibold text-emerald">{formatRupiah(estimatedProfit + totalProfit)}</span>
+            </div>
           </CardContent>
         </Card>
       </div>
