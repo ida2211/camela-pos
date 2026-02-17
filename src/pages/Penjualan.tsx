@@ -40,6 +40,7 @@ export default function Penjualan() {
   const [customerName, setCustomerName] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
   const [selProduct, setSelProduct] = useState("");
+  const [productSearch, setProductSearch] = useState("");
   const [selQty, setSelQty] = useState("1");
   const [dateFrom, setDateFrom] = useState<Date | undefined>();
   const [dateTo, setDateTo] = useState<Date | undefined>();
@@ -252,50 +253,52 @@ export default function Penjualan() {
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Customer</TableHead>
-                <TableHead>Tanggal</TableHead>
-                <TableHead className="text-right">Total</TableHead>
-                <TableHead className="text-right">Modal</TableHead>
-                <TableHead className="text-right">Keuntungan</TableHead>
-                <TableHead className="text-right">Aksi</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.length === 0 ? (
+          <div className="max-h-[500px] overflow-y-auto">
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                    Belum ada penjualan
-                  </TableCell>
+                  <TableHead>Customer</TableHead>
+                  <TableHead>Tanggal</TableHead>
+                  <TableHead className="text-right">Total</TableHead>
+                  <TableHead className="text-right">Modal</TableHead>
+                  <TableHead className="text-right">Keuntungan</TableHead>
+                  <TableHead className="text-right">Aksi</TableHead>
                 </TableRow>
-              ) : (
-                filtered.map((s) => (
-                  <TableRow key={s.id}>
-                    <TableCell className="font-medium">{s.customer_name}</TableCell>
-                    <TableCell>{formatDateTime(s.created_at)}</TableCell>
-                    <TableCell className="text-right">{formatRupiah(s.total)}</TableCell>
-                    <TableCell className="text-right text-muted-foreground">{formatRupiah(s.cost)}</TableCell>
-                    <TableCell className="text-right font-semibold text-emerald">{formatRupiah(s.profit)}</TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-1">
-                        <Button variant="ghost" size="icon" onClick={() => openView(s)}>
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => openEdit(s)}>
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => deleteSaleMut.mutate(s.id)}>
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </div>
+              </TableHeader>
+              <TableBody>
+                {filtered.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                      Belum ada penjualan
                     </TableCell>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
+                ) : (
+                  filtered.map((s) => (
+                    <TableRow key={s.id}>
+                      <TableCell className="font-medium">{s.customer_name}</TableCell>
+                      <TableCell>{formatDateTime(s.created_at)}</TableCell>
+                      <TableCell className="text-right">{formatRupiah(s.total)}</TableCell>
+                      <TableCell className="text-right text-muted-foreground">{formatRupiah(s.cost)}</TableCell>
+                      <TableCell className="text-right font-semibold text-emerald">{formatRupiah(s.profit)}</TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-1">
+                          <Button variant="ghost" size="icon" onClick={() => openView(s)}>
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => openEdit(s)}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => deleteSaleMut.mutate(s.id)}>
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
 
@@ -314,16 +317,43 @@ export default function Penjualan() {
             <div className="flex gap-2">
               <div className="flex-1">
                 <Label>Produk</Label>
-                <Select value={selProduct} onValueChange={setSelProduct}>
-                  <SelectTrigger><SelectValue placeholder="Pilih produk" /></SelectTrigger>
-                  <SelectContent>
-                    {products.filter((p) => p.stock > 0).map((p) => (
-                      <SelectItem key={p.id} value={p.id}>
-                        {p.name} (stok: {p.stock}) - {formatRupiah(p.sell_price)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" role="combobox" className="w-full justify-between font-normal">
+                      {selProduct ? products.find(p => p.id === selProduct)?.name : "Pilih produk..."}
+                      <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[300px] p-0" align="start">
+                    <div className="p-2">
+                      <Input
+                        placeholder="Cari produk..."
+                        value={productSearch}
+                        onChange={(e) => setProductSearch(e.target.value)}
+                        className="h-8"
+                      />
+                    </div>
+                    <div className="max-h-[200px] overflow-y-auto">
+                      {products
+                        .filter(p => p.stock > 0 && p.name.toLowerCase().includes(productSearch.toLowerCase()))
+                        .map(p => (
+                          <button
+                            key={p.id}
+                            className={cn(
+                              "w-full text-left px-3 py-2 text-sm hover:bg-accent cursor-pointer",
+                              selProduct === p.id && "bg-accent font-medium"
+                            )}
+                            onClick={() => {
+                              setSelProduct(p.id);
+                              setProductSearch("");
+                            }}
+                          >
+                            {p.name} (stok: {p.stock}) - {formatRupiah(p.sell_price)}
+                          </button>
+                        ))}
+                    </div>
+                  </PopoverContent>
+                </Popover>
               </div>
               <div className="w-20">
                 <Label>Qty</Label>
