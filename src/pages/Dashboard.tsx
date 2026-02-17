@@ -1,28 +1,35 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatRupiah } from "@/lib/format";
 import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
-  ShoppingCart,
-  TrendingUp,
-  Wallet,
-  BarChart3,
-  Trophy,
-  Package,
+  ShoppingCart, TrendingUp, Wallet, BarChart3, Trophy, Package,
 } from "lucide-react";
 import {
-  PieChart,
-  Pie,
-  Cell,
-  Legend,
-  Tooltip,
-  ResponsiveContainer,
+  PieChart, Pie, Cell, Legend, Tooltip, ResponsiveContainer,
 } from "recharts";
 
+const MONTHS = [
+  { value: "all", label: "Semua Bulan" },
+  { value: "1", label: "Januari" }, { value: "2", label: "Februari" },
+  { value: "3", label: "Maret" }, { value: "4", label: "April" },
+  { value: "5", label: "Mei" }, { value: "6", label: "Juni" },
+  { value: "7", label: "Juli" }, { value: "8", label: "Agustus" },
+  { value: "9", label: "September" }, { value: "10", label: "Oktober" },
+  { value: "11", label: "November" }, { value: "12", label: "Desember" },
+];
+
 export default function Dashboard() {
+  const [filterMonth, setFilterMonth] = useState("all");
+  const [filterYear, setFilterYear] = useState("all");
+
   const { data: products } = useQuery({
     queryKey: ["products"],
     queryFn: async () => {
@@ -55,21 +62,43 @@ export default function Dashboard() {
     },
   });
 
-  const totalSales = sales?.reduce((s, r) => s + r.total, 0) ?? 0;
-  const totalProfit = sales?.reduce((s, r) => s + r.profit, 0) ?? 0;
+  // Build year options from sales & expenses data
+  const availableYears = (() => {
+    const years = new Set<string>();
+    sales?.forEach((s) => years.add(new Date(s.created_at).getFullYear().toString()));
+    expenses?.forEach((e) => years.add(new Date(e.expense_date).getFullYear().toString()));
+    return Array.from(years).sort().reverse();
+  })();
+
+  // Filter function
+  const matchDate = (dateStr: string) => {
+    if (filterMonth === "all" && filterYear === "all") return true;
+    const d = new Date(dateStr);
+    if (filterYear !== "all" && d.getFullYear().toString() !== filterYear) return false;
+    if (filterMonth !== "all" && (d.getMonth() + 1).toString() !== filterMonth) return false;
+    return true;
+  };
+
+  const filteredSales = sales?.filter((s) => matchDate(s.created_at)) ?? [];
+  const filteredExpenses = expenses?.filter((e) => matchDate(e.expense_date)) ?? [];
+  const filteredSaleItems = saleItems?.filter((si) => {
+    const sale = sales?.find((s) => s.id === si.sale_id);
+    return sale ? matchDate(sale.created_at) : false;
+  }) ?? [];
+
+  const totalSales = filteredSales.reduce((s, r) => s + r.total, 0);
+  const totalProfit = filteredSales.reduce((s, r) => s + r.profit, 0);
   const totalModalStok = products?.reduce((s, p) => s + p.buy_price * p.stock, 0) ?? 0;
   const totalSellStok = products?.reduce((s, p) => s + p.sell_price * p.stock, 0) ?? 0;
   const estimatedProfit = totalSellStok - totalModalStok;
-  const totalExpOps = expenses?.filter((e) => e.category === "Operasional").reduce((s, r) => s + r.amount, 0) ?? 0;
-  const totalExpBuy = expenses?.filter((e) => e.category === "Beli Produk").reduce((s, r) => s + r.amount, 0) ?? 0;
+  const totalExpOps = filteredExpenses.filter((e) => e.category === "Operasional").reduce((s, r) => s + r.amount, 0);
+  const totalExpBuy = filteredExpenses.filter((e) => e.category === "Beli Produk").reduce((s, r) => s + r.amount, 0);
   const totalExpenses = totalExpOps + totalExpBuy;
   const selisih = totalSales - totalExpenses;
 
-  // Top 10 best-selling products
   const topProducts = (() => {
-    if (!saleItems) return [];
     const map = new Map<string, { name: string; qty: number; total: number }>();
-    for (const item of saleItems) {
+    for (const item of filteredSaleItems) {
       const existing = map.get(item.product_id);
       if (existing) {
         existing.qty += item.qty;
@@ -87,9 +116,42 @@ export default function Dashboard() {
   ];
   const PIE_COLORS = ["hsl(347, 77%, 50%)", "hsl(30, 80%, 55%)"];
 
+  const filterLabel = filterMonth === "all" && filterYear === "all"
+    ? "Semua Waktu"
+    : `${filterMonth !== "all" ? MONTHS.find(m => m.value === filterMonth)?.label : ""} ${filterYear !== "all" ? filterYear : ""}`.trim();
+
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Dashboard</h1>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="text-2xl font-bold">Dashboard</h1>
+        <div className="flex gap-2">
+          <Select value={filterMonth} onValueChange={setFilterMonth}>
+            <SelectTrigger className="w-[150px]">
+              <SelectValue placeholder="Bulan" />
+            </SelectTrigger>
+            <SelectContent>
+              {MONTHS.map((m) => (
+                <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={filterYear} onValueChange={setFilterYear}>
+            <SelectTrigger className="w-[120px]">
+              <SelectValue placeholder="Tahun" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Semua Tahun</SelectItem>
+              {availableYears.map((y) => (
+                <SelectItem key={y} value={y}>{y}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      {filterLabel !== "Semua Waktu" && (
+        <p className="text-sm text-muted-foreground">Menampilkan data: <span className="font-medium">{filterLabel}</span></p>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card>

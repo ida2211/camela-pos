@@ -10,7 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
-import { TrendingUp, TrendingDown, DollarSign, Calculator, Download, FileText } from "lucide-react";
+import { TrendingUp, TrendingDown, DollarSign, Calculator, Download, FileText, Package } from "lucide-react";
 import { toast } from "sonner";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -313,6 +313,29 @@ export default function Laporan() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Stok & Estimasi */}
+      <Card>
+        <CardHeader className="flex flex-row items-center gap-2">
+          <Package className="h-5 w-5 text-amber-500" />
+          <CardTitle className="text-base">Nilai Stok Barang</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Total Sisa Stok (Harga Modal)</span>
+            <span className="font-semibold text-amber-500">{formatRupiah(products.reduce((s, p) => s + p.buy_price * p.stock, 0))}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Total Sisa Stok (Harga Jual)</span>
+            <span className="font-semibold text-primary">{formatRupiah(products.reduce((s, p) => s + p.sell_price * p.stock, 0))}</span>
+          </div>
+          <div className="flex justify-between border-t pt-2">
+            <span className="font-medium">Perkiraan Keuntungan Jika Semua Laku</span>
+            <span className="font-bold text-emerald">{formatRupiah(products.reduce((s, p) => s + (p.sell_price - p.buy_price) * p.stock, 0))}</span>
+          </div>
+          <p className="text-xs text-muted-foreground">{products.filter(p => p.stock > 0).length} produk · {products.reduce((s, p) => s + p.stock, 0)} unit tersisa</p>
+        </CardContent>
+      </Card>
 
       {/* Rincian Perhitungan */}
       <Card>
