@@ -7,20 +7,20 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
-import { Badge } from "@/components/ui/badge";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Plus, Search, Trash2, ShoppingCart, Pencil, Eye, CalendarIcon, X } from "lucide-react";
+import { Plus, Search, Trash2, ShoppingCart, Pencil, Eye, CalendarIcon, X, Printer, Tag } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import type { Tables } from "@/integrations/supabase/types";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 type Sale = Tables<"sales">;
 type SaleItem = Tables<"sale_items">;
@@ -31,6 +31,100 @@ interface CartItem {
   buy_price: number;
   sell_price: number;
   qty: number;
+  discount: number; // diskon per item (rupiah)
+}
+
+function printStrukPDF(sale: Sale, items: SaleItem[]) {
+  const storeProfile = JSON.parse(localStorage.getItem("storeProfile") || "{}");
+  const storeName = storeProfile.name || "CAMELA OUTWEAR";
+  const storeAddress = storeProfile.address || "";
+  const storePhone = storeProfile.phone || "";
+
+  // Ukuran thermal 80mm = ~226.77 pt lebar, panjang dinamis
+  const pageWidth = 226.77;
+  const doc = new jsPDF({ unit: "pt", format: [pageWidth, 600], orientation: "portrait" });
+
+  let y = 16;
+  const cx = pageWidth / 2;
+
+  // Header toko
+  doc.setFontSize(13);
+  doc.setFont("helvetica", "bold");
+  doc.text(storeName, cx, y, { align: "center" });
+  y += 16;
+
+  if (storeAddress) {
+    doc.setFontSize(7.5);
+    doc.setFont("helvetica", "normal");
+    const addrLines = doc.splitTextToSize(storeAddress, pageWidth - 20);
+    addrLines.forEach((line: string) => { doc.text(line, cx, y, { align: "center" }); y += 10; });
+  }
+  if (storePhone) {
+    doc.setFontSize(7.5);
+    doc.text(`Telp: ${storePhone}`, cx, y, { align: "center" });
+    y += 10;
+  }
+
+  // Garis
+  doc.setLineWidth(0.5);
+  doc.line(10, y, pageWidth - 10, y); y += 10;
+
+  // Info transaksi
+  doc.setFontSize(8);
+  doc.setFont("helvetica", "normal");
+  doc.text(`Tanggal : ${formatDateTime(sale.created_at)}`, 10, y); y += 11;
+  doc.text(`Customer: ${sale.customer_name}`, 10, y); y += 11;
+
+  doc.line(10, y, pageWidth - 10, y); y += 10;
+
+  // Header tabel item
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.text("Produk", 10, y);
+  doc.text("Qty", pageWidth - 110, y, { align: "right" });
+  doc.text("Harga", pageWidth - 65, y, { align: "right" });
+  doc.text("Subtotal", pageWidth - 10, y, { align: "right" });
+  y += 4;
+  doc.setLineWidth(0.3);
+  doc.line(10, y, pageWidth - 10, y); y += 9;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.5);
+  for (const item of items) {
+    const nameLine = doc.splitTextToSize(item.product_name, 110);
+    nameLine.forEach((line: string, idx: number) => {
+      doc.text(line, 10, y + idx * 9);
+    });
+    const lineH = Math.max(nameLine.length * 9, 9);
+    doc.text(`${item.qty}`, pageWidth - 110, y, { align: "right" });
+    doc.text(formatRupiah(item.sell_price), pageWidth - 65, y, { align: "right" });
+    doc.text(formatRupiah(item.subtotal), pageWidth - 10, y, { align: "right" });
+    y += lineH + 3;
+  }
+
+  doc.setLineWidth(0.5);
+  doc.line(10, y, pageWidth - 10, y); y += 10;
+
+  // Total
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.text("TOTAL", 10, y);
+  doc.text(formatRupiah(sale.total), pageWidth - 10, y, { align: "right" });
+  y += 16;
+
+  // Ucapan terima kasih
+  doc.setLineWidth(0.5);
+  doc.line(10, y, pageWidth - 10, y); y += 12;
+  doc.setFont("helvetica", "italic");
+  doc.setFontSize(8);
+  doc.text("Terima kasih sudah berbelanja!", cx, y, { align: "center" }); y += 11;
+  doc.text("Semoga puas dengan produk kami 😊", cx, y, { align: "center" }); y += 11;
+  doc.text("Sampai jumpa kembali!", cx, y, { align: "center" }); y += 14;
+
+  // Potong ukuran halaman sesuai konten
+  doc.internal.pageSize.height = y + 10;
+
+  doc.save(`struk-${sale.id.slice(0, 8)}.pdf`);
 }
 
 export default function Penjualan() {
@@ -42,8 +136,10 @@ export default function Penjualan() {
   const [selProduct, setSelProduct] = useState("");
   const [productSearch, setProductSearch] = useState("");
   const [selQty, setSelQty] = useState("1");
+  const [selDiscount, setSelDiscount] = useState("0");
   const [dateFrom, setDateFrom] = useState<Date | undefined>();
   const [dateTo, setDateTo] = useState<Date | undefined>();
+  const [isReseler, setIsReseler] = useState(false);
 
   // View detail
   const [viewSale, setViewSale] = useState<Sale | null>(null);
@@ -75,6 +171,7 @@ export default function Penjualan() {
     const p = products.find((pr) => pr.id === selProduct);
     if (!p) return;
     const qty = Number(selQty);
+    const discount = Number(selDiscount) || 0;
     if (qty <= 0 || qty > p.stock) {
       toast.error("Qty tidak valid atau stok tidak cukup");
       return;
@@ -83,16 +180,27 @@ export default function Penjualan() {
     if (existing) {
       setCart(cart.map((c) => c.product_id === p.id ? { ...c, qty: c.qty + qty } : c));
     } else {
-      setCart([...cart, { product_id: p.id, product_name: p.name, buy_price: p.buy_price, sell_price: p.sell_price, qty }]);
+      setCart([...cart, {
+        product_id: p.id,
+        product_name: p.name,
+        buy_price: p.buy_price,
+        sell_price: p.sell_price,
+        qty,
+        discount,
+      }]);
     }
     setSelProduct("");
     setSelQty("1");
+    setSelDiscount("0");
   };
 
   const removeFromCart = (pid: string) => setCart(cart.filter((c) => c.product_id !== pid));
 
-  const cartTotal = cart.reduce((s, c) => s + c.sell_price * c.qty, 0);
+  // Harga efektif per item = sell_price - discount
+  const effectivePrice = (c: CartItem) => Math.max(0, c.sell_price - c.discount);
+  const cartTotal = cart.reduce((s, c) => s + effectivePrice(c) * c.qty, 0);
   const cartCost = cart.reduce((s, c) => s + c.buy_price * c.qty, 0);
+  const totalDiscount = cart.reduce((s, c) => s + c.discount * c.qty, 0);
 
   const submitSale = useMutation({
     mutationFn: async () => {
@@ -114,8 +222,8 @@ export default function Penjualan() {
         product_name: c.product_name,
         qty: c.qty,
         buy_price: c.buy_price,
-        sell_price: c.sell_price,
-        subtotal: c.sell_price * c.qty,
+        sell_price: effectivePrice(c),
+        subtotal: effectivePrice(c) * c.qty,
       }));
       await supabase.from("sale_items").insert(items);
 
@@ -132,6 +240,8 @@ export default function Penjualan() {
       setDialogOpen(false);
       setCart([]);
       setCustomerName("");
+      setIsReseler(false);
+      setSelDiscount("0");
       toast.success("Transaksi berhasil!");
     },
   });
@@ -172,6 +282,11 @@ export default function Penjualan() {
     setEditOpen(true);
   };
 
+  const handlePrint = async (sale: Sale) => {
+    const { data } = await supabase.from("sale_items").select("*").eq("sale_id", sale.id);
+    printStrukPDF(sale, data ?? []);
+  };
+
   const filtered = useMemo(() => {
     return sales.filter((s) => {
       const matchSearch = s.customer_name.toLowerCase().includes(search.toLowerCase());
@@ -191,31 +306,34 @@ export default function Penjualan() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <div className="flex flex-col h-[calc(100vh-80px)] space-y-6 overflow-hidden">
+      {/* Header */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between flex-shrink-0">
         <h1 className="text-2xl font-bold">Penjualan</h1>
         <Button onClick={() => setDialogOpen(true)}>
           <ShoppingCart className="mr-2 h-4 w-4" /> Transaksi Baru
         </Button>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      {/* Summary Cards */}
+      <div className="grid gap-4 sm:grid-cols-2 flex-shrink-0">
         <Card className="border-primary/20 bg-primary/5">
           <CardContent className="flex items-center justify-between py-4">
             <span className="text-sm font-medium text-muted-foreground">Total Penjualan</span>
             <span className="text-xl font-bold text-primary">{formatRupiah(totalPenjualan)}</span>
           </CardContent>
         </Card>
-        <Card className="border-emerald-500/20 bg-emerald-500/5">
+        <Card className="border-green-500/20 bg-green-500/5">
           <CardContent className="flex items-center justify-between py-4">
             <span className="text-sm font-medium text-muted-foreground">Total Profit</span>
-            <span className="text-xl font-bold text-emerald-600">{formatRupiah(totalProfit)}</span>
+            <span className="text-xl font-bold" style={{ color: "hsl(152, 57%, 38%)" }}>{formatRupiah(totalProfit)}</span>
           </CardContent>
         </Card>
       </div>
 
-      <Card>
-        <CardHeader className="pb-3">
+      {/* Filter + Table Card (scrollable) */}
+      <Card className="flex flex-col flex-1 min-h-0">
+        <CardHeader className="pb-3 flex-shrink-0">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
             <div className="relative max-w-sm flex-1">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -252,10 +370,10 @@ export default function Penjualan() {
             </div>
           </div>
         </CardHeader>
-        <CardContent className="p-0">
-          <div className="max-h-[500px] overflow-y-auto">
+        <CardContent className="p-0 flex-1 min-h-0">
+          <div className="h-full overflow-y-auto">
             <Table>
-              <TableHeader>
+              <TableHeader className="sticky top-0 bg-background z-10">
                 <TableRow>
                   <TableHead>Customer</TableHead>
                   <TableHead>Tanggal</TableHead>
@@ -279,16 +397,19 @@ export default function Penjualan() {
                       <TableCell>{formatDateTime(s.created_at)}</TableCell>
                       <TableCell className="text-right">{formatRupiah(s.total)}</TableCell>
                       <TableCell className="text-right text-muted-foreground">{formatRupiah(s.cost)}</TableCell>
-                      <TableCell className="text-right font-semibold text-emerald">{formatRupiah(s.profit)}</TableCell>
+                      <TableCell className="text-right font-semibold" style={{ color: "hsl(152, 57%, 38%)" }}>{formatRupiah(s.profit)}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
-                          <Button variant="ghost" size="icon" onClick={() => openView(s)}>
+                          <Button variant="ghost" size="icon" onClick={() => openView(s)} title="Detail">
                             <Eye className="h-4 w-4" />
                           </Button>
-                          <Button variant="ghost" size="icon" onClick={() => openEdit(s)}>
+                          <Button variant="ghost" size="icon" onClick={() => handlePrint(s)} title="Cetak Struk">
+                            <Printer className="h-4 w-4 text-blue-500" />
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => openEdit(s)} title="Edit">
                             <Pencil className="h-4 w-4" />
                           </Button>
-                          <Button variant="ghost" size="icon" onClick={() => deleteSaleMut.mutate(s.id)}>
+                          <Button variant="ghost" size="icon" onClick={() => deleteSaleMut.mutate(s.id)} title="Hapus">
                             <Trash2 className="h-4 w-4 text-destructive" />
                           </Button>
                         </div>
@@ -303,8 +424,11 @@ export default function Penjualan() {
       </Card>
 
       {/* New Transaction Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-lg">
+      <Dialog open={dialogOpen} onOpenChange={(open) => {
+        setDialogOpen(open);
+        if (!open) { setCart([]); setCustomerName(""); setIsReseler(false); setSelDiscount("0"); }
+      }}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Transaksi Baru</DialogTitle>
           </DialogHeader>
@@ -312,6 +436,30 @@ export default function Penjualan() {
             <div>
               <Label>Nama Customer</Label>
               <Input value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="Opsional" />
+            </div>
+
+            {/* Toggle Reseler */}
+            <div className="flex items-center gap-3 rounded-lg border p-3 bg-muted/30">
+              <Tag className="h-4 w-4 text-amber-500 flex-shrink-0" />
+              <div className="flex-1">
+                <p className="text-sm font-medium">Harga Reseler</p>
+                <p className="text-xs text-muted-foreground">Aktifkan untuk input potongan per item</p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={isReseler}
+                onClick={() => {
+                  setIsReseler(!isReseler);
+                  if (isReseler) setSelDiscount("0");
+                }}
+                className={cn(
+                  "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none",
+                  isReseler ? "bg-primary" : "bg-input"
+                )}
+              >
+                <span className={cn("inline-block h-4 w-4 transform rounded-full bg-white transition-transform", isReseler ? "translate-x-6" : "translate-x-1")} />
+              </button>
             </div>
 
             <div className="flex gap-2">
@@ -331,6 +479,7 @@ export default function Penjualan() {
                         value={productSearch}
                         onChange={(e) => setProductSearch(e.target.value)}
                         className="h-8"
+                        autoFocus
                       />
                     </div>
                     <div className="max-h-[200px] overflow-y-auto">
@@ -351,6 +500,9 @@ export default function Penjualan() {
                             {p.name} (stok: {p.stock}) - {formatRupiah(p.sell_price)}
                           </button>
                         ))}
+                      {products.filter(p => p.stock > 0 && p.name.toLowerCase().includes(productSearch.toLowerCase())).length === 0 && (
+                        <p className="px-3 py-4 text-sm text-muted-foreground text-center">Produk tidak ditemukan</p>
+                      )}
                     </div>
                   </PopoverContent>
                 </Popover>
@@ -359,6 +511,18 @@ export default function Penjualan() {
                 <Label>Qty</Label>
                 <Input type="number" min="1" value={selQty} onChange={(e) => setSelQty(e.target.value)} />
               </div>
+              {isReseler && (
+                <div className="w-28">
+                  <Label>Disc/item (Rp)</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={selDiscount}
+                    onChange={(e) => setSelDiscount(e.target.value)}
+                    placeholder="0"
+                  />
+                </div>
+              )}
               <div className="flex items-end">
                 <Button size="icon" onClick={addToCart} disabled={!selProduct}>
                   <Plus className="h-4 w-4" />
@@ -373,6 +537,8 @@ export default function Penjualan() {
                     <TableRow>
                       <TableHead>Produk</TableHead>
                       <TableHead className="text-right">Qty</TableHead>
+                      <TableHead className="text-right">Harga</TableHead>
+                      {isReseler && <TableHead className="text-right">Disc</TableHead>}
                       <TableHead className="text-right">Subtotal</TableHead>
                       <TableHead />
                     </TableRow>
@@ -380,9 +546,15 @@ export default function Penjualan() {
                   <TableBody>
                     {cart.map((c) => (
                       <TableRow key={c.product_id}>
-                        <TableCell>{c.product_name}</TableCell>
+                        <TableCell className="text-xs">{c.product_name}</TableCell>
                         <TableCell className="text-right">{c.qty}</TableCell>
-                        <TableCell className="text-right">{formatRupiah(c.sell_price * c.qty)}</TableCell>
+                        <TableCell className="text-right text-xs">{formatRupiah(c.sell_price)}</TableCell>
+                        {isReseler && (
+                          <TableCell className="text-right text-xs text-amber-600">
+                            {c.discount > 0 ? `-${formatRupiah(c.discount)}` : "-"}
+                          </TableCell>
+                        )}
+                        <TableCell className="text-right text-xs font-medium">{formatRupiah(effectivePrice(c) * c.qty)}</TableCell>
                         <TableCell>
                           <Button variant="ghost" size="icon" onClick={() => removeFromCart(c.product_id)}>
                             <Trash2 className="h-4 w-4 text-destructive" />
@@ -392,8 +564,13 @@ export default function Penjualan() {
                     ))}
                   </TableBody>
                 </Table>
-                <div className="border-t p-3 text-right font-bold">
-                  Total: {formatRupiah(cartTotal)}
+                <div className="border-t p-3 space-y-1 text-right">
+                  {isReseler && totalDiscount > 0 && (
+                    <p className="text-sm text-muted-foreground">
+                      Total Diskon Reseler: <span className="font-semibold text-amber-600">-{formatRupiah(totalDiscount)}</span>
+                    </p>
+                  )}
+                  <p className="font-bold">Total: {formatRupiah(cartTotal)}</p>
                 </div>
               </div>
             )}
@@ -422,7 +599,7 @@ export default function Penjualan() {
                 <span className="text-muted-foreground">Total</span>
                 <span className="font-bold">{formatRupiah(viewSale.total)}</span>
                 <span className="text-muted-foreground">Keuntungan</span>
-                <span className="font-bold text-emerald">{formatRupiah(viewSale.profit)}</span>
+                <span className="font-bold" style={{ color: "hsl(152, 57%, 38%)" }}>{formatRupiah(viewSale.profit)}</span>
               </div>
               <Table>
                 <TableHeader>
@@ -444,6 +621,11 @@ export default function Penjualan() {
                   ))}
                 </TableBody>
               </Table>
+              <div className="flex justify-end pt-2">
+                <Button variant="outline" size="sm" onClick={() => printStrukPDF(viewSale, viewItems)}>
+                  <Printer className="mr-2 h-4 w-4" /> Cetak Struk
+                </Button>
+              </div>
             </div>
           )}
         </DialogContent>
@@ -469,4 +651,3 @@ export default function Penjualan() {
     </div>
   );
 }
-
