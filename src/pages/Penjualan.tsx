@@ -34,169 +34,100 @@ interface CartItem {
   discount: number; // diskon per item (rupiah)
 }
 
-function printStrukPDF(sale: Sale, items: SaleItem[]) {
+function renderStruk(doc: jsPDF, sale: Sale, items: SaleItem[]) {
   const storeProfile = JSON.parse(localStorage.getItem("storeProfile") || "{}");
   const storeName = storeProfile.name || "CAMELA OUTWEAR";
   const storeAddress = storeProfile.address || "";
   const storePhone = storeProfile.phone || "";
 
-  // Ukuran thermal 80mm = ~226.77 pt lebar, panjang dinamis
-  const pageWidth = 226.77;
-  const doc = new jsPDF({ unit: "pt", format: [pageWidth, 600], orientation: "portrait" });
+  const pw = doc.internal.pageSize.getWidth();
+  const cx = pw / 2;
+  const ml = 8; // margin left
+  const mr = pw - 8; // margin right
+  let y = 14;
 
-  let y = 16;
-  const cx = pageWidth / 2;
-
-  // Header toko
-  doc.setFontSize(13);
+  // === Header Toko ===
+  doc.setFontSize(12);
   doc.setFont("helvetica", "bold");
-  doc.text(storeName, cx, y, { align: "center" });
-  y += 16;
+  doc.text(storeName.toUpperCase(), cx, y, { align: "center" });
+  y += 13;
 
+  doc.setFontSize(7);
+  doc.setFont("helvetica", "normal");
   if (storeAddress) {
-    doc.setFontSize(7.5);
-    doc.setFont("helvetica", "normal");
-    const addrLines = doc.splitTextToSize(storeAddress, pageWidth - 20);
-    addrLines.forEach((line: string) => { doc.text(line, cx, y, { align: "center" }); y += 10; });
+    const lines = doc.splitTextToSize(storeAddress, pw - 16);
+    lines.forEach((l: string) => { doc.text(l, cx, y, { align: "center" }); y += 9; });
   }
   if (storePhone) {
-    doc.setFontSize(7.5);
     doc.text(`Telp: ${storePhone}`, cx, y, { align: "center" });
+    y += 9;
+  }
+  y += 2;
+
+  // === Garis putus-putus ===
+  const dash = (yy: number) => {
+    doc.setFontSize(6);
+    doc.setFont("helvetica", "normal");
+    const dashes = "- ".repeat(30);
+    doc.text(dashes, cx, yy, { align: "center" });
+  };
+
+  dash(y); y += 8;
+
+  // === Info Transaksi ===
+  doc.setFontSize(7);
+  doc.text(`Tanggal  : ${formatDateTime(sale.created_at)}`, ml, y); y += 9;
+  doc.text(`Customer : ${sale.customer_name}`, ml, y); y += 9;
+
+  dash(y); y += 10;
+
+  // === Daftar Item ===
+  doc.setFontSize(7);
+  for (const item of items) {
+    // Nama produk
+    doc.setFont("helvetica", "bold");
+    const nameLines = doc.splitTextToSize(item.product_name, pw - 16);
+    nameLines.forEach((l: string) => { doc.text(l, ml, y); y += 8; });
+
+    // Detail: qty x harga = subtotal
+    doc.setFont("helvetica", "normal");
+    const detail = `  ${item.qty} x ${formatRupiah(item.sell_price)}`;
+    doc.text(detail, ml, y);
+    doc.text(formatRupiah(item.subtotal), mr, y, { align: "right" });
     y += 10;
   }
 
-  // Garis
-  doc.setLineWidth(0.5);
-  doc.line(10, y, pageWidth - 10, y); y += 10;
+  dash(y); y += 10;
 
-  // Info transaksi
-  doc.setFontSize(8);
-  doc.setFont("helvetica", "normal");
-  doc.text(`Tanggal : ${formatDateTime(sale.created_at)}`, 10, y); y += 11;
-  doc.text(`Customer: ${sale.customer_name}`, 10, y); y += 11;
-
-  doc.line(10, y, pageWidth - 10, y); y += 10;
-
-  // Header tabel item
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(8);
-  doc.text("Produk", 10, y);
-  doc.text("Qty", pageWidth - 110, y, { align: "right" });
-  doc.text("Harga", pageWidth - 65, y, { align: "right" });
-  doc.text("Subtotal", pageWidth - 10, y, { align: "right" });
-  y += 4;
-  doc.setLineWidth(0.3);
-  doc.line(10, y, pageWidth - 10, y); y += 9;
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(7.5);
-  for (const item of items) {
-    const nameLine = doc.splitTextToSize(item.product_name, 110);
-    nameLine.forEach((line: string, idx: number) => {
-      doc.text(line, 10, y + idx * 9);
-    });
-    const lineH = Math.max(nameLine.length * 9, 9);
-    doc.text(`${item.qty}`, pageWidth - 110, y, { align: "right" });
-    doc.text(formatRupiah(item.sell_price), pageWidth - 65, y, { align: "right" });
-    doc.text(formatRupiah(item.subtotal), pageWidth - 10, y, { align: "right" });
-    y += lineH + 3;
-  }
-
-  doc.setLineWidth(0.5);
-  doc.line(10, y, pageWidth - 10, y); y += 10;
-
-  // Total
+  // === Total ===
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9);
-  doc.text("TOTAL", 10, y);
-  doc.text(formatRupiah(sale.total), pageWidth - 10, y, { align: "right" });
-  y += 16;
+  doc.text("TOTAL", ml, y);
+  doc.text(formatRupiah(sale.total), mr, y, { align: "right" });
+  y += 12;
 
-  // Ucapan terima kasih
-  doc.setLineWidth(0.5);
-  doc.line(10, y, pageWidth - 10, y); y += 12;
-  doc.setFont("helvetica", "italic");
-  doc.setFontSize(8);
-  doc.text("Terima kasih sudah berbelanja!", cx, y, { align: "center" }); y += 11;
-  doc.text("Semoga puas dengan produk kami 😊", cx, y, { align: "center" }); y += 11;
-  doc.text("Sampai jumpa kembali!", cx, y, { align: "center" }); y += 14;
+  dash(y); y += 10;
 
-  // Buat ulang PDF dengan tinggi sesuai konten
-  const finalHeight = y + 10;
-  const finalDoc = new jsPDF({ unit: "pt", format: [pageWidth, finalHeight], orientation: "portrait" });
+  // === Footer ===
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7);
+  doc.text("Terima kasih sudah berbelanja!", cx, y, { align: "center" }); y += 9;
+  doc.text("Semoga puas dengan produk kami", cx, y, { align: "center" }); y += 9;
+  doc.text("Sampai jumpa kembali!", cx, y, { align: "center" }); y += 6;
 
-  let fy = 16;
+  return y;
+}
 
-  // Header toko
-  finalDoc.setFontSize(13);
-  finalDoc.setFont("helvetica", "bold");
-  finalDoc.text(storeName, cx, fy, { align: "center" });
-  fy += 16;
+function printStrukPDF(sale: Sale, items: SaleItem[]) {
+  const pageWidth = 226.77;
+  // Pass 1: measure height
+  const measureDoc = new jsPDF({ unit: "pt", format: [pageWidth, 1000], orientation: "portrait" });
+  const totalH = renderStruk(measureDoc, sale, items) + 10;
 
-  if (storeAddress) {
-    finalDoc.setFontSize(7.5);
-    finalDoc.setFont("helvetica", "normal");
-    const addrLines = finalDoc.splitTextToSize(storeAddress, pageWidth - 20);
-    addrLines.forEach((line: string) => { finalDoc.text(line, cx, fy, { align: "center" }); fy += 10; });
-  }
-  if (storePhone) {
-    finalDoc.setFontSize(7.5);
-    finalDoc.text(`Telp: ${storePhone}`, cx, fy, { align: "center" });
-    fy += 10;
-  }
-
-  finalDoc.setLineWidth(0.5);
-  finalDoc.line(10, fy, pageWidth - 10, fy); fy += 10;
-
-  finalDoc.setFontSize(8);
-  finalDoc.setFont("helvetica", "normal");
-  finalDoc.text(`Tanggal : ${formatDateTime(sale.created_at)}`, 10, fy); fy += 11;
-  finalDoc.text(`Customer: ${sale.customer_name}`, 10, fy); fy += 11;
-
-  finalDoc.line(10, fy, pageWidth - 10, fy); fy += 10;
-
-  finalDoc.setFont("helvetica", "bold");
-  finalDoc.setFontSize(8);
-  finalDoc.text("Produk", 10, fy);
-  finalDoc.text("Qty", pageWidth - 110, fy, { align: "right" });
-  finalDoc.text("Harga", pageWidth - 65, fy, { align: "right" });
-  finalDoc.text("Subtotal", pageWidth - 10, fy, { align: "right" });
-  fy += 4;
-  finalDoc.setLineWidth(0.3);
-  finalDoc.line(10, fy, pageWidth - 10, fy); fy += 9;
-
-  finalDoc.setFont("helvetica", "normal");
-  finalDoc.setFontSize(7.5);
-  for (const item of items) {
-    const nameLine = finalDoc.splitTextToSize(item.product_name, 110);
-    nameLine.forEach((line: string, idx: number) => {
-      finalDoc.text(line, 10, fy + idx * 9);
-    });
-    const lineH = Math.max(nameLine.length * 9, 9);
-    finalDoc.text(`${item.qty}`, pageWidth - 110, fy, { align: "right" });
-    finalDoc.text(formatRupiah(item.sell_price), pageWidth - 65, fy, { align: "right" });
-    finalDoc.text(formatRupiah(item.subtotal), pageWidth - 10, fy, { align: "right" });
-    fy += lineH + 3;
-  }
-
-  finalDoc.setLineWidth(0.5);
-  finalDoc.line(10, fy, pageWidth - 10, fy); fy += 10;
-
-  finalDoc.setFont("helvetica", "bold");
-  finalDoc.setFontSize(9);
-  finalDoc.text("TOTAL", 10, fy);
-  finalDoc.text(formatRupiah(sale.total), pageWidth - 10, fy, { align: "right" });
-  fy += 16;
-
-  finalDoc.setLineWidth(0.5);
-  finalDoc.line(10, fy, pageWidth - 10, fy); fy += 12;
-  finalDoc.setFont("helvetica", "italic");
-  finalDoc.setFontSize(8);
-  finalDoc.text("Terima kasih sudah berbelanja!", cx, fy, { align: "center" }); fy += 11;
-  finalDoc.text("Semoga puas dengan produk kami", cx, fy, { align: "center" }); fy += 11;
-  finalDoc.text("Sampai jumpa kembali!", cx, fy, { align: "center" });
-
-  finalDoc.save(`struk-${sale.id.slice(0, 8)}.pdf`);
+  // Pass 2: render with exact height
+  const doc = new jsPDF({ unit: "pt", format: [pageWidth, totalH], orientation: "portrait" });
+  renderStruk(doc, sale, items);
+  doc.save(`struk-${sale.id.slice(0, 8)}.pdf`);
 }
 
 function shareWhatsApp(sale: Sale, items: SaleItem[]) {
