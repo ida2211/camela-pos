@@ -121,10 +121,82 @@ function printStrukPDF(sale: Sale, items: SaleItem[]) {
   doc.text("Semoga puas dengan produk kami 😊", cx, y, { align: "center" }); y += 11;
   doc.text("Sampai jumpa kembali!", cx, y, { align: "center" }); y += 14;
 
-  // Potong ukuran halaman sesuai konten
-  doc.internal.pageSize.height = y + 10;
+  // Buat ulang PDF dengan tinggi sesuai konten
+  const finalHeight = y + 10;
+  const finalDoc = new jsPDF({ unit: "pt", format: [pageWidth, finalHeight], orientation: "portrait" });
 
-  doc.save(`struk-${sale.id.slice(0, 8)}.pdf`);
+  let fy = 16;
+
+  // Header toko
+  finalDoc.setFontSize(13);
+  finalDoc.setFont("helvetica", "bold");
+  finalDoc.text(storeName, cx, fy, { align: "center" });
+  fy += 16;
+
+  if (storeAddress) {
+    finalDoc.setFontSize(7.5);
+    finalDoc.setFont("helvetica", "normal");
+    const addrLines = finalDoc.splitTextToSize(storeAddress, pageWidth - 20);
+    addrLines.forEach((line: string) => { finalDoc.text(line, cx, fy, { align: "center" }); fy += 10; });
+  }
+  if (storePhone) {
+    finalDoc.setFontSize(7.5);
+    finalDoc.text(`Telp: ${storePhone}`, cx, fy, { align: "center" });
+    fy += 10;
+  }
+
+  finalDoc.setLineWidth(0.5);
+  finalDoc.line(10, fy, pageWidth - 10, fy); fy += 10;
+
+  finalDoc.setFontSize(8);
+  finalDoc.setFont("helvetica", "normal");
+  finalDoc.text(`Tanggal : ${formatDateTime(sale.created_at)}`, 10, fy); fy += 11;
+  finalDoc.text(`Customer: ${sale.customer_name}`, 10, fy); fy += 11;
+
+  finalDoc.line(10, fy, pageWidth - 10, fy); fy += 10;
+
+  finalDoc.setFont("helvetica", "bold");
+  finalDoc.setFontSize(8);
+  finalDoc.text("Produk", 10, fy);
+  finalDoc.text("Qty", pageWidth - 110, fy, { align: "right" });
+  finalDoc.text("Harga", pageWidth - 65, fy, { align: "right" });
+  finalDoc.text("Subtotal", pageWidth - 10, fy, { align: "right" });
+  fy += 4;
+  finalDoc.setLineWidth(0.3);
+  finalDoc.line(10, fy, pageWidth - 10, fy); fy += 9;
+
+  finalDoc.setFont("helvetica", "normal");
+  finalDoc.setFontSize(7.5);
+  for (const item of items) {
+    const nameLine = finalDoc.splitTextToSize(item.product_name, 110);
+    nameLine.forEach((line: string, idx: number) => {
+      finalDoc.text(line, 10, fy + idx * 9);
+    });
+    const lineH = Math.max(nameLine.length * 9, 9);
+    finalDoc.text(`${item.qty}`, pageWidth - 110, fy, { align: "right" });
+    finalDoc.text(formatRupiah(item.sell_price), pageWidth - 65, fy, { align: "right" });
+    finalDoc.text(formatRupiah(item.subtotal), pageWidth - 10, fy, { align: "right" });
+    fy += lineH + 3;
+  }
+
+  finalDoc.setLineWidth(0.5);
+  finalDoc.line(10, fy, pageWidth - 10, fy); fy += 10;
+
+  finalDoc.setFont("helvetica", "bold");
+  finalDoc.setFontSize(9);
+  finalDoc.text("TOTAL", 10, fy);
+  finalDoc.text(formatRupiah(sale.total), pageWidth - 10, fy, { align: "right" });
+  fy += 16;
+
+  finalDoc.setLineWidth(0.5);
+  finalDoc.line(10, fy, pageWidth - 10, fy); fy += 12;
+  finalDoc.setFont("helvetica", "italic");
+  finalDoc.setFontSize(8);
+  finalDoc.text("Terima kasih sudah berbelanja!", cx, fy, { align: "center" }); fy += 11;
+  finalDoc.text("Semoga puas dengan produk kami", cx, fy, { align: "center" }); fy += 11;
+  finalDoc.text("Sampai jumpa kembali!", cx, fy, { align: "center" });
+
+  finalDoc.save(`struk-${sale.id.slice(0, 8)}.pdf`);
 }
 
 export default function Penjualan() {
