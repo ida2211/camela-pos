@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Plus, Search, Trash2, ShoppingCart, Pencil, Eye, CalendarIcon, X, Printer, Tag } from "lucide-react";
+import { Plus, Search, Trash2, ShoppingCart, Pencil, Eye, CalendarIcon, X, Printer, Tag, MessageCircle } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import type { Tables } from "@/integrations/supabase/types";
@@ -199,6 +199,30 @@ function printStrukPDF(sale: Sale, items: SaleItem[]) {
   finalDoc.save(`struk-${sale.id.slice(0, 8)}.pdf`);
 }
 
+function shareWhatsApp(sale: Sale, items: SaleItem[]) {
+  const storeProfile = JSON.parse(localStorage.getItem("storeProfile") || "{}");
+  const storeName = storeProfile.name || "CAMELA OUTWEAR";
+  const storeAddress = storeProfile.address || "";
+  const storePhone = storeProfile.phone || "";
+
+  let msg = `🧾 *${storeName}*\n`;
+  if (storeAddress) msg += `📍 ${storeAddress}\n`;
+  if (storePhone) msg += `📞 ${storePhone}\n`;
+  msg += `\n📅 ${formatDateTime(sale.created_at)}\n`;
+  msg += `👤 Customer: ${sale.customer_name}\n`;
+  msg += `─────────────────\n`;
+  for (const item of items) {
+    msg += `▪️ ${item.product_name}\n`;
+    msg += `   ${item.qty} x ${formatRupiah(item.sell_price)} = ${formatRupiah(item.subtotal)}\n`;
+  }
+  msg += `─────────────────\n`;
+  msg += `*TOTAL: ${formatRupiah(sale.total)}*\n\n`;
+  msg += `Terima kasih sudah berbelanja! 🙏\nSemoga puas dengan produk kami 😊`;
+
+  const url = `https://wa.me/?text=${encodeURIComponent(msg)}`;
+  window.open(url, "_blank");
+}
+
 export default function Penjualan() {
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
@@ -359,6 +383,11 @@ export default function Penjualan() {
     printStrukPDF(sale, data ?? []);
   };
 
+  const handleShareWA = async (sale: Sale) => {
+    const { data } = await supabase.from("sale_items").select("*").eq("sale_id", sale.id);
+    shareWhatsApp(sale, data ?? []);
+  };
+
   const filtered = useMemo(() => {
     return sales.filter((s) => {
       const matchSearch = s.customer_name.toLowerCase().includes(search.toLowerCase());
@@ -477,6 +506,9 @@ export default function Penjualan() {
                           </Button>
                           <Button variant="ghost" size="icon" onClick={() => handlePrint(s)} title="Cetak Struk">
                             <Printer className="h-4 w-4 text-blue-500" />
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => handleShareWA(s)} title="Share WhatsApp">
+                            <MessageCircle className="h-4 w-4 text-green-500" />
                           </Button>
                           <Button variant="ghost" size="icon" onClick={() => openEdit(s)} title="Edit">
                             <Pencil className="h-4 w-4" />
@@ -693,9 +725,12 @@ export default function Penjualan() {
                   ))}
                 </TableBody>
               </Table>
-              <div className="flex justify-end pt-2">
+              <div className="flex justify-end gap-2 pt-2">
                 <Button variant="outline" size="sm" onClick={() => printStrukPDF(viewSale, viewItems)}>
                   <Printer className="mr-2 h-4 w-4" /> Cetak Struk
+                </Button>
+                <Button variant="outline" size="sm" className="text-green-600 border-green-300 hover:bg-green-50" onClick={() => shareWhatsApp(viewSale, viewItems)}>
+                  <MessageCircle className="mr-2 h-4 w-4" /> Share WA
                 </Button>
               </div>
             </div>
