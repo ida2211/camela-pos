@@ -198,7 +198,7 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold text-amber-500">{formatRupiah(totalModalStok)}</p>
-            <p className="text-xs text-muted-foreground mt-1">Sisa stok: {products?.reduce((s, p) => s + p.stock, 0) ?? 0} unit</p>
+            <p className="text-xs text-muted-foreground mt-1">{products?.filter(p => p.stock > 0).length ?? 0} produk · {products?.reduce((s, p) => s + p.stock, 0) ?? 0} stok</p>
             <div className="mt-2 flex justify-between text-sm text-muted-foreground">
               <span>Harga Jual</span>
               <span className="font-semibold text-primary">{formatRupiah(totalSellStok)}</span>

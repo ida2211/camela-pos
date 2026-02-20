@@ -183,6 +183,17 @@ export default function StokBarang() {
         </div>
       </div>
 
+      <div className="flex flex-wrap gap-4">
+        <div className="rounded-lg border bg-card px-4 py-2 text-sm">
+          <span className="text-muted-foreground">Jumlah Produk: </span>
+          <span className="font-semibold">{products.length}</span>
+        </div>
+        <div className="rounded-lg border bg-card px-4 py-2 text-sm">
+          <span className="text-muted-foreground">Total Sisa Stok: </span>
+          <span className="font-semibold">{products.reduce((s, p) => s + p.stock, 0)}</span>
+        </div>
+      </div>
+
       <Card>
         <CardHeader className="pb-3">
           <div className="relative max-w-sm">
