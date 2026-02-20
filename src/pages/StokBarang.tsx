@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { formatRupiah } from "@/lib/format";
@@ -18,7 +18,7 @@ import {
 import {
   Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList,
 } from "@/components/ui/command";
-import { Plus, Search, Pencil, Trash2, PackagePlus, PackageMinus, ChevronsUpDown, Check } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, PackagePlus, PackageMinus, ChevronsUpDown, Check, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import type { Tables } from "@/integrations/supabase/types";
@@ -28,7 +28,8 @@ type Product = Tables<"products">;
 export default function StokBarang() {
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
-
+  const [sortBy, setSortBy] = useState<"name" | "stock" | null>(null);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   // Master product dialog
   const [productDialogOpen, setProductDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
@@ -159,9 +160,27 @@ export default function StokBarang() {
     setProductDialogOpen(true);
   };
 
-  const filtered = products.filter((p) =>
-    p.name.toLowerCase().includes(search.toLowerCase())
-  );
+  const toggleSort = (col: "name" | "stock") => {
+    if (sortBy === col) {
+      if (sortDir === "asc") setSortDir("desc");
+      else { setSortBy(null); setSortDir("asc"); }
+    } else {
+      setSortBy(col);
+      setSortDir(col === "stock" ? "asc" : "asc");
+    }
+  };
+
+  const filtered = useMemo(() => {
+    let list = products.filter((p) =>
+      p.name.toLowerCase().includes(search.toLowerCase())
+    );
+    if (sortBy === "name") {
+      list = [...list].sort((a, b) => sortDir === "asc" ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name));
+    } else if (sortBy === "stock") {
+      list = [...list].sort((a, b) => sortDir === "asc" ? a.stock - b.stock : b.stock - a.stock);
+    }
+    return list;
+  }, [products, search, sortBy, sortDir]);
 
   const selectedProduct = products.find((p) => p.id === selectedProductId);
   const reduceProduct = products.find((p) => p.id === reduceProductId);
@@ -206,10 +225,20 @@ export default function StokBarang() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Nama Produk</TableHead>
+                  <TableHead className="cursor-pointer select-none" onClick={() => toggleSort("name")}>
+                    <div className="flex items-center gap-1">
+                      Nama Produk
+                      {sortBy === "name" ? (sortDir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-30" />}
+                    </div>
+                  </TableHead>
                   <TableHead className="text-right">Harga Beli</TableHead>
                   <TableHead className="text-right">Harga Jual</TableHead>
-                  <TableHead className="text-right">Stok</TableHead>
+                  <TableHead className="text-right cursor-pointer select-none" onClick={() => toggleSort("stock")}>
+                    <div className="flex items-center justify-end gap-1">
+                      Stok
+                      {sortBy === "stock" ? (sortDir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-30" />}
+                    </div>
+                  </TableHead>
                   <TableHead className="text-right">Aksi</TableHead>
                 </TableRow>
               </TableHeader>
