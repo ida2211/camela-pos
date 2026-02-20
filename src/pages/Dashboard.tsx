@@ -238,7 +238,7 @@ export default function Dashboard() {
             <p className="text-xs text-muted-foreground mt-1">Penjualan − Pengeluaran</p>
             <div className="mt-2 flex justify-between text-sm text-muted-foreground">
               <span>Estimasi jika laku semua</span>
-              <span className="font-semibold text-emerald">{formatRupiah(selisih + estimatedProfit)}</span>
+              <span className="font-semibold text-emerald">{formatRupiah(selisih + totalSellStok)}</span>
             </div>
           </CardContent>
         </Card>
