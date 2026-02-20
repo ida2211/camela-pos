@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState, useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatRupiah } from "@/lib/format";
@@ -27,8 +27,31 @@ const MONTHS = [
 ];
 
 export default function Dashboard() {
+  const queryClient = useQueryClient();
   const [filterMonth, setFilterMonth] = useState("all");
   const [filterYear, setFilterYear] = useState("all");
+
+  // Realtime subscription for products, sales, sale_items, expenses
+  useEffect(() => {
+    const channel = supabase
+      .channel("dashboard-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "products" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["products"] });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "sales" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["sales"] });
+        queryClient.invalidateQueries({ queryKey: ["sale_items"] });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "sale_items" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["sale_items"] });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "expenses" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["expenses"] });
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [queryClient]);
 
   const { data: products } = useQuery({
     queryKey: ["products"],
