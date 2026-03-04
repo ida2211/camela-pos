@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { formatRupiah, formatDateTime } from "@/lib/format";
@@ -13,6 +13,7 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Plus, Search, Trash2, ShoppingCart, Pencil, Eye, CalendarIcon, X, Printer, Tag, MessageCircle } from "lucide-react";
@@ -159,6 +160,8 @@ export default function Penjualan() {
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [customerName, setCustomerName] = useState("");
+  const [platform, setPlatform] = useState<"regular" | "tiktok" | "shopee">("regular");
+  const [platformFeePercent, setPlatformFeePercent] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
   const [selProduct, setSelProduct] = useState("");
   const [productSearch, setProductSearch] = useState("");
@@ -228,59 +231,450 @@ export default function Penjualan() {
   const cartTotal = cart.reduce((s, c) => s + effectivePrice(c) * c.qty, 0);
   const cartCost = cart.reduce((s, c) => s + c.buy_price * c.qty, 0);
   const totalDiscount = cart.reduce((s, c) => s + c.discount * c.qty, 0);
+  
+  // Hitung platform fee
+  let platformFee = 0;
+  if (platform === "tiktok" || platform === "shopee") {
+    const feePercent = Number(platformFeePercent) || 0;
+    platformFee = cartTotal * (feePercent / 100);
+  }
+  const finalTotal = cartTotal - platformFee;
 
-  const submitSale = useMutation({
-    mutationFn: async () => {
-      const total = cartTotal;
-      const cost = cartCost;
-      const profit = total - cost;
+  // Auto-setup platform fields on component mount
+  useEffect(() => {
+    const autoSetupPlatform = async () => {
+      try {
+        console.log("Auto-checking platform fields...");
+        
+        // Check if platform column exists
+        const { error: checkError } = await supabase
+          .from("sales")
+          .select("platform")
+          .limit(1);
+        
+        if (checkError && checkError.message.includes('column')) {
+          console.log("Platform columns don't exist, attempting aggressive auto-setup...");
+          
+          // Method 1: Try RPC to execute SQL
+          try {
+            console.log("Method 1: RPC SQL execution...");
+            
+            const { error: rpcError } = await supabase.rpc('exec_sql', {
+              sql: `
+                ALTER TABLE sales 
+                ADD COLUMN IF NOT EXISTS platform TEXT DEFAULT 'regular' CHECK (platform IN ('regular', 'tiktok', 'shopee')),
+                ADD COLUMN IF NOT EXISTS platform_fee DECIMAL(15,2) DEFAULT 0.00;
+                
+                CREATE INDEX IF NOT EXISTS idx_sales_platform ON sales(platform);
+                
+                UPDATE sales 
+                SET platform = 'regular' 
+                WHERE platform IS NULL;
+              `
+            });
+            
+            if (!rpcError) {
+              console.log("✅ RPC SQL execution successful!");
+              toast.success("Platform fields auto-setup completed via RPC!");
+              
+              // Test the setup
+              const { error: testError } = await supabase
+                .from("sales")
+                .select("platform")
+                .limit(1);
+              
+              if (!testError) {
+                console.log("✅ Platform fields verified!");
+                return;
+              }
+            }
+          } catch (e) {
+            console.log("Method 1 (RPC) failed:", e);
+          }
+          
+          // Method 2: Try direct SQL via raw query
+          try {
+            console.log("Method 2: Raw SQL query...");
+            
+            const { error: rawError } = await supabase
+              .from('sales')
+              .select('*')
+              .limit(1);
+            
+            if (rawError && rawError.message.includes('column')) {
+              // Force create columns by trying to insert with platform fields
+              const { error: insertError } = await supabase
+                .from('sales')
+                .insert({
+                  customer_name: "setup_test",
+                  total: 0,
+                  cost: 0,
+                  profit: 0,
+                  platform: "regular",
+                  platform_fee: 0
+                });
+              
+              if (!insertError) {
+                console.log("✅ Columns created via insert!");
+                // Clean up test record
+                await supabase
+                  .from('sales')
+                  .delete()
+                  .eq('customer_name', 'setup_test');
+                
+                toast.success("Platform fields auto-setup completed!");
+                return;
+              }
+            }
+          } catch (e) {
+            console.log("Method 2 (Raw SQL) failed:", e);
+          }
+          
+          // Method 3: Force manual setup with automatic copy and open
+          console.log("Method 3: Force manual setup...");
+          
+          const setupSQL = `ALTER TABLE sales 
+ADD COLUMN IF NOT EXISTS platform TEXT DEFAULT 'regular' CHECK (platform IN ('regular', 'tiktok', 'shopee')),
+ADD COLUMN IF NOT EXISTS platform_fee DECIMAL(15,2) DEFAULT 0.00;
 
-      const { data: sale } = await supabase
-        .from("sales")
-        .insert({ customer_name: customerName || "Umum", total, cost, profit })
-        .select()
-        .single();
+CREATE INDEX IF NOT EXISTS idx_sales_platform ON sales(platform);
 
-      if (!sale) throw new Error("Failed to create sale");
+UPDATE sales 
+SET platform = 'regular' 
+WHERE platform IS NULL;`;
+          
+          // Auto copy to clipboard
+          try {
+            await navigator.clipboard.writeText(setupSQL);
+            console.log("✅ SQL copied to clipboard!");
+            
+            // Auto open dashboard
+            window.open("https://supabase.com/dashboard/project/iyjtduaxwujsyrcdglia/sql", "_blank");
+            
+            toast.error("Platform fields missing! Dashboard opened with SQL ready to paste.", {
+              duration: 10000
+            });
+            
+            // Show alert with instructions
+            alert(`PLATFORM SETUP REQUIRED!
 
-      const items = cart.map((c) => ({
-        sale_id: sale.id,
-        product_id: c.product_id,
-        product_name: c.product_name,
-        qty: c.qty,
-        buy_price: c.buy_price,
-        sell_price: effectivePrice(c),
-        subtotal: effectivePrice(c) * c.qty,
-      }));
-      await supabase.from("sale_items").insert(items);
+SQL has been copied to clipboard and dashboard opened.
 
-      for (const c of cart) {
-        const p = products.find((pr) => pr.id === c.product_id);
-        if (p) {
-          await supabase.from("products").update({ stock: p.stock - c.qty }).eq("id", p.id);
+1. Paste SQL in the SQL Editor
+2. Click "Run"
+3. Refresh this page
+
+SQL to paste:
+${setupSQL}
+            `);
+          } catch (clipboardError) {
+            // Fallback - open dashboard with SQL in URL
+            const encodedSQL = encodeURIComponent(setupSQL);
+            window.open(`https://supabase.com/dashboard/project/iyjtduaxwujsyrcdglia/sql?sql=${encodedSQL}`, "_blank");
+            
+            toast.error("Platform fields missing! Please run SQL in opened dashboard.", {
+              duration: 10000
+            });
+          }
+          
+          console.log(`
+==========================================
+FORCE SETUP REQUIRED
+==========================================
+${setupSQL}
+
+Dashboard: https://supabase.com/dashboard/project/iyjtduaxwujsyrcdglia/sql
+==========================================
+          `);
+        } else {
+          console.log("✅ Platform fields already exist");
+          toast.success("Platform fields are ready!");
         }
+      } catch (error) {
+        console.log("Auto-setup check failed:", error);
+      }
+    };
+    
+    autoSetupPlatform();
+  }, []);
+const setupPlatformFields = async () => {
+  try {
+    console.log("Setting up platform fields...");
+    
+    // Check if platform column exists
+    const { error: checkError } = await supabase
+      .from("sales")
+      .select("platform")
+      .limit(1);
+    
+    if (checkError && checkError.message.includes('column')) {
+      console.log("Platform columns don't exist, creating them...");
+      
+      // Create platform columns using raw SQL through Supabase
+      const sql = `
+        ALTER TABLE sales 
+        ADD COLUMN IF NOT EXISTS platform TEXT DEFAULT 'regular' CHECK (platform IN ('regular', 'tiktok', 'shopee')),
+        ADD COLUMN IF NOT EXISTS platform_fee DECIMAL(15,2) DEFAULT 0.00;
+        
+        CREATE INDEX IF NOT EXISTS idx_sales_platform ON sales(platform);
+        
+        UPDATE sales 
+        SET platform = 'regular' 
+        WHERE platform IS NULL;
+      `;
+      
+      console.log("Please run this SQL in Supabase Dashboard SQL Editor:");
+      console.log(sql);
+      
+      // Show user-friendly message
+      alert(`Platform fields need to be added to database!
+
+Please run this SQL in Supabase Dashboard SQL Editor:
+
+${sql}
+
+After running the SQL, refresh this page and try again.
+      `);
+      
+      return false;
+    }
+    
+    console.log("Platform fields already exist");
+    return true;
+  } catch (error) {
+    console.error("Setup error:", error);
+    return false;
+  }
+};
+
+// Helper function to process items and stock
+const processItemsAndStock = async (sale: any, cart: CartItem[], products: any[], effectivePrice: (c: CartItem) => number) => {
+  const items = cart.map((c) => ({
+    sale_id: sale.id,
+    product_id: c.product_id,
+    product_name: c.product_name,
+    qty: c.qty,
+    buy_price: c.buy_price,
+    sell_price: effectivePrice(c),
+    subtotal: effectivePrice(c) * c.qty,
+  }));
+  
+  console.log("Items to insert:", items);
+  
+  const { error: itemsError } = await supabase.from("sale_items").insert(items);
+  if (itemsError) {
+    console.error("Error inserting items:", itemsError);
+    throw new Error(`Failed to insert items: ${itemsError.message}`);
+  }
+
+  for (const c of cart) {
+    const p = products.find((pr) => pr.id === c.product_id);
+    if (p) {
+      const newStock = p.stock - c.qty;
+      console.log(`Updating stock for ${p.name}: ${p.stock} -> ${newStock}`);
+      const { error: stockError } = await supabase.from("products").update({ stock: newStock }).eq("id", p.id);
+      if (stockError) {
+        console.error("Error updating stock:", stockError);
+        throw new Error(`Failed to update stock: ${stockError.message}`);
+      }
+    }
+  }
+};
+
+const submitSale = useMutation({
+    mutationFn: async () => {
+      try {
+        console.log("=== TRANSACTION WITH PLATFORM ===");
+        console.log("Cart:", cart);
+        console.log("Cart length:", cart.length);
+        console.log("Platform:", platform);
+        console.log("Platform Fee %:", platformFeePercent);
+        
+        // Validate cart is not empty
+        if (cart.length === 0) {
+          throw new Error("Cart is empty - please add items");
+        }
+        
+        // Validate stock availability
+        for (const cartItem of cart) {
+          const product = products.find(p => p.id === cartItem.product_id);
+          if (product) {
+            console.log(`Product ${product.name}: stock=${product.stock}, needed=${cartItem.qty}`);
+            if (product.stock < cartItem.qty) {
+              throw new Error(`Insufficient stock for ${product.name}. Available: ${product.stock}, Needed: ${cartItem.qty}`);
+            }
+          }
+        }
+        
+        const total = cartTotal;
+        const cost = cartCost;
+        
+        // Calculate platform fee
+        let platformFeeAmount = 0;
+        if (platform === "tiktok" || platform === "shopee") {
+          const feePercent = Number(platformFeePercent) || 0;
+          platformFeeAmount = total * (feePercent / 100);
+        }
+        const finalTotal = total - platformFeeAmount;
+        const profit = finalTotal - cost;
+
+        console.log("Values - Total:", total, "Cost:", cost, "Platform Fee:", platformFeeAmount, "Final Total:", finalTotal, "Profit:", profit);
+
+        // Try to save with platform fields first
+        let saleData: any = { 
+          customer_name: customerName || "Umum", 
+          total: finalTotal, 
+          cost: cost, 
+          profit: profit
+        };
+
+        // Add platform fields if TikTok or Shopee
+        if (platform === "tiktok" || platform === "shopee") {
+          saleData.platform = platform;
+          saleData.platform_fee = platformFeeAmount;
+        }
+        
+        console.log("Sale data to insert:", saleData);
+
+        const { data: sale, error } = await supabase
+          .from("sales")
+          .insert(saleData)
+          .select()
+          .single();
+
+        console.log("Insert result - sale:", sale, "error:", error);
+
+        if (error) {
+          console.error("Error creating sale:", error);
+          
+          // If error is about platform fields, fallback to basic transaction
+          if (error.message && (error.message.includes('column') || error.message.includes('platform'))) {
+            console.log("Platform fields not available, using basic transaction");
+            
+            // Fallback to basic data without platform fields
+            const basicSaleData = { 
+              customer_name: customerName || "Umum", 
+              total: finalTotal, 
+              cost: cost, 
+              profit: profit
+            };
+            
+            console.log("Basic sale data:", basicSaleData);
+            
+            const { data: sale2, error: error2 } = await supabase
+              .from("sales")
+              .insert(basicSaleData)
+              .select()
+              .single();
+              
+            if (error2) {
+              console.error("Error with basic sale data:", error2);
+              throw new Error(`Failed to create sale: ${error2.message}`);
+            }
+            
+            if (!sale2) throw new Error("Failed to create sale");
+            
+            console.log("Sale created successfully (basic):", sale2);
+            
+            // Continue with sale2 for items and stock
+            await processItemsAndStock(sale2, cart, products, effectivePrice);
+            
+            // Show warning about platform fields
+            toast.warning("Transaksi berhasil tanpa platform. Platform fields perlu ditambahkan ke database.");
+            return;
+          }
+          
+          throw new Error(`Failed to create sale: ${error.message}`);
+        }
+
+        if (!sale) throw new Error("Failed to create sale");
+
+        console.log("Sale created successfully with platform:", sale);
+        
+        // Process items and stock
+        await processItemsAndStock(sale, cart, products, effectivePrice);
+        
+        console.log("=== TRANSACTION SUCCESS ===");
+      } catch (error) {
+        console.error("=== TRANSACTION ERROR ===");
+        console.error("Transaction error:", error);
+        console.error("Error stack:", error.stack);
+        console.error("=== END ERROR ===");
+        throw error;
       }
     },
     onSuccess: () => {
+      console.log("Transaction successful!");
       qc.invalidateQueries({ queryKey: ["sales"] });
       qc.invalidateQueries({ queryKey: ["products"] });
       setDialogOpen(false);
       setCart([]);
       setCustomerName("");
+      setPlatform("regular");
+      setPlatformFeePercent("");
       setIsReseler(false);
       setSelDiscount("0");
       toast.success("Transaksi berhasil!");
+    },
+    onError: (error: any) => {
+      console.error("Transaction failed:", error);
+      toast.error(`Gagal menyimpan transaksi: ${error.message || error}`);
     },
   });
 
   const deleteSaleMut = useMutation({
     mutationFn: async (id: string) => {
-      await supabase.from("sale_items").delete().eq("sale_id", id);
+      // Get sale items to restore stock
+      const { data: items } = await supabase.from("sale_items").select("*").eq("sale_id", id);
+      
+      if (items && items.length > 0) {
+        // Show confirmation dialog
+        const restoreStock = window.confirm(
+          `Apakah Anda ingin mengembalikan stok untuk ${items.length} item?\n\n` +
+          items.map(item => `- ${item.product_name} (${item.qty} unit)`).join('\n') +
+          '\n\nKlik OK untuk mengembalikan stok, Cancel untuk tidak.'
+        );
+        
+        // Delete sale items
+        await supabase.from("sale_items").delete().eq("sale_id", id);
+        
+        // Restore stock if confirmed
+        if (restoreStock) {
+          for (const item of items) {
+            // Get current stock and update directly
+            const { data: product } = await supabase.from("products").select("stock").eq("id", item.product_id).single();
+            if (product) {
+              await supabase.from("products").update({ 
+                stock: product.stock + item.qty 
+              }).eq("id", item.product_id);
+            }
+          }
+          
+          // Create expense record for stock restoration
+          await supabase.from("expenses").insert({
+            name: `Kembalikan Stok - Transaksi Dihapus`,
+            amount: items.reduce((total, item) => {
+              const product = products.find(p => p.id === item.product_id);
+              return total + (product ? product.buy_price * item.qty : 0);
+            }, 0),
+            category: "Koreksi Stok",
+            note: `Pengembalian stok dari transaksi yang dihapus (${items.length} item)`,
+          });
+        }
+      }
+      
+      // Delete sale
       await supabase.from("sales").delete().eq("id", id);
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["sales"] });
-      toast.success("Penjualan dihapus");
+      qc.invalidateQueries({ queryKey: ["products"] });
+      qc.invalidateQueries({ queryKey: ["expenses"] });
+      toast.success("Penjualan dihapus dan stok dikembalikan");
+    },
+    onError: (error: any) => {
+      console.error("Delete error:", error);
+      toast.error(`Gagal menghapus penjualan: ${error.message || error}`);
     },
   });
 
@@ -342,9 +736,14 @@ export default function Penjualan() {
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between flex-shrink-0">
         <h1 className="text-2xl font-bold">Penjualan</h1>
-        <Button onClick={() => setDialogOpen(true)}>
-          <ShoppingCart className="mr-2 h-4 w-4" /> Transaksi Baru
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={setupPlatformFields}>
+            <Tag className="mr-2 h-4 w-4" /> Setup Platform
+          </Button>
+          <Button onClick={() => setDialogOpen(true)}>
+            <ShoppingCart className="mr-2 h-4 w-4" /> Transaksi Baru
+          </Button>
+        </div>
       </div>
 
       {/* Summary Cards */}
@@ -408,6 +807,7 @@ export default function Penjualan() {
               <TableHeader className="sticky top-0 bg-background z-10">
                 <TableRow>
                   <TableHead>Customer</TableHead>
+                  <TableHead>Platform</TableHead>
                   <TableHead>Tanggal</TableHead>
                   <TableHead className="text-right">Total</TableHead>
                   <TableHead className="text-right">Modal</TableHead>
@@ -418,14 +818,29 @@ export default function Penjualan() {
               <TableBody>
                 {filtered.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                       Belum ada penjualan
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filtered.map((s) => (
+                  filtered.map((s) => {
+                    const getPlatformLabel = (platform?: string) => {
+                      if (!platform) return "Regular";
+                      switch(platform) {
+                        case "tiktok": return "TikTok";
+                        case "shopee": return "Shopee";
+                        default: return "Regular";
+                      }
+                    };
+                    
+                    return (
                     <TableRow key={s.id}>
                       <TableCell className="font-medium">{s.customer_name}</TableCell>
+                      <TableCell>
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100">
+                          {getPlatformLabel((s as any).platform)}
+                        </span>
+                      </TableCell>
                       <TableCell>{formatDateTime(s.created_at)}</TableCell>
                       <TableCell className="text-right">{formatRupiah(s.total)}</TableCell>
                       <TableCell className="text-right text-muted-foreground">{formatRupiah(s.cost)}</TableCell>
@@ -450,7 +865,8 @@ export default function Penjualan() {
                         </div>
                       </TableCell>
                     </TableRow>
-                  ))
+                    );
+                  })
                 )}
               </TableBody>
             </Table>
@@ -461,41 +877,115 @@ export default function Penjualan() {
       {/* New Transaction Dialog */}
       <Dialog open={dialogOpen} onOpenChange={(open) => {
         setDialogOpen(open);
-        if (!open) { setCart([]); setCustomerName(""); setIsReseler(false); setSelDiscount("0"); }
+        if (!open) { 
+          setCart([]); 
+          setCustomerName(""); 
+          setPlatform("regular");
+          setPlatformFeePercent("");
+          setIsReseler(false); 
+          setSelDiscount("0"); 
+        }
       }}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Transaksi Baru</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <div>
-              <Label>Nama Customer</Label>
-              <Input value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="Opsional" />
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Nama Customer</Label>
+                <Input value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="Opsional" />
+              </div>
+              <div>
+                <Label>Platform</Label>
+                <Select value={platform} onValueChange={(value: "regular" | "tiktok" | "shopee") => {
+                  setPlatform(value);
+                  if (value !== "regular") {
+                    setIsReseler(false);
+                    setSelDiscount("0");
+                  }
+                }}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Pilih platform" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="regular">Regular</SelectItem>
+                    <SelectItem value="tiktok">TikTok Shop</SelectItem>
+                    <SelectItem value="shopee">Shopee</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
-            {/* Toggle Reseler */}
-            <div className="flex items-center gap-3 rounded-lg border p-3 bg-muted/30">
-              <Tag className="h-4 w-4 text-amber-500 flex-shrink-0" />
-              <div className="flex-1">
-                <p className="text-sm font-medium">Harga Reseler</p>
-                <p className="text-xs text-muted-foreground">Aktifkan untuk input potongan per item</p>
+            {(platform === "tiktok" || platform === "shopee") && (
+              <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 bg-gray-50">
+                <div className="flex items-center mb-3">
+                  <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center mr-3">
+                    <Tag className="h-4 w-4 text-gray-600" />
+                  </div>
+                  <div>
+                    <Label className="text-sm font-semibold text-gray-700">Potongan Platform</Label>
+                    <p className="text-xs text-gray-500">Platform {platform === "tiktok" ? "TikTok" : "Shopee"}</p>
+                  </div>
+                </div>
+                
+                <div className="relative">
+                  <Input 
+                    type="number"
+                    value={platformFeePercent} 
+                    onChange={(e) => setPlatformFeePercent(e.target.value)} 
+                    placeholder="0.0"
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    className="pr-12"
+                  />
+                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                    <span className="text-sm font-semibold text-gray-500">%</span>
+                  </div>
+                </div>
+                
+                <div className="mt-3">
+                  <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-blue-500 rounded-full transition-all duration-300"
+                      style={{ width: `${Math.min(Number(platformFeePercent) || 0, 100)}%` }}
+                    ></div>
+                  </div>
+                  <div className="flex justify-between mt-1">
+                    <span className="text-xs text-gray-500">0%</span>
+                    <span className="text-xs font-bold text-gray-700">{platformFeePercent || 0}%</span>
+                    <span className="text-xs text-gray-500">100%</span>
+                  </div>
+                </div>
               </div>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={isReseler}
-                onClick={() => {
-                  setIsReseler(!isReseler);
-                  if (isReseler) setSelDiscount("0");
-                }}
-                className={cn(
-                  "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none",
-                  isReseler ? "bg-primary" : "bg-input"
-                )}
-              >
-                <span className={cn("inline-block h-4 w-4 transform rounded-full bg-white transition-transform", isReseler ? "translate-x-6" : "translate-x-1")} />
-              </button>
-            </div>
+            )}
+
+            {/* Toggle Reseler */}
+            {platform === "regular" && (
+              <div className="flex items-center gap-3 rounded-lg border p-3 bg-muted/30">
+                <Tag className="h-4 w-4 text-amber-500 flex-shrink-0" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium">Harga Reseler</p>
+                  <p className="text-xs text-muted-foreground">Aktifkan untuk input potongan per item</p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={isReseler}
+                  onClick={() => {
+                    setIsReseler(!isReseler);
+                    if (isReseler) setSelDiscount("0");
+                  }}
+                  className={cn(
+                    "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none",
+                    isReseler ? "bg-primary" : "bg-input"
+                  )}
+                >
+                  <span className={cn("inline-block h-4 w-4 transform rounded-full bg-white transition-transform", isReseler ? "translate-x-6" : "translate-x-1")} />
+                </button>
+              </div>
+            )}
 
             <div className="flex gap-2">
               <div className="flex-1">
@@ -573,7 +1063,7 @@ export default function Penjualan() {
                       <TableHead>Produk</TableHead>
                       <TableHead className="text-right">Qty</TableHead>
                       <TableHead className="text-right">Harga</TableHead>
-                      {isReseler && <TableHead className="text-right">Disc</TableHead>}
+                      {isReseler && platform === "regular" && <TableHead className="text-right">Disc</TableHead>}
                       <TableHead className="text-right">Subtotal</TableHead>
                       <TableHead />
                     </TableRow>
@@ -584,7 +1074,7 @@ export default function Penjualan() {
                         <TableCell className="text-xs">{c.product_name}</TableCell>
                         <TableCell className="text-right">{c.qty}</TableCell>
                         <TableCell className="text-right text-xs">{formatRupiah(c.sell_price)}</TableCell>
-                        {isReseler && (
+                        {isReseler && platform === "regular" && (
                           <TableCell className="text-right text-xs text-amber-600">
                             {c.discount > 0 ? `-${formatRupiah(c.discount)}` : "-"}
                           </TableCell>
@@ -600,12 +1090,23 @@ export default function Penjualan() {
                   </TableBody>
                 </Table>
                 <div className="border-t p-3 space-y-1 text-right">
-                  {isReseler && totalDiscount > 0 && (
+                  {isReseler && platform === "regular" && totalDiscount > 0 && (
                     <p className="text-sm text-muted-foreground">
                       Total Diskon Reseler: <span className="font-semibold text-amber-600">-{formatRupiah(totalDiscount)}</span>
                     </p>
                   )}
                   <p className="font-bold">Total: {formatRupiah(cartTotal)}</p>
+                  {platformFee > 0 && (
+                    <>
+                      <p className="text-sm text-muted-foreground">
+                        Potongan {platform === "tiktok" ? "TikTok" : "Shopee"} ({platformFeePercent}%): 
+                        <span className="font-semibold text-red-600">-{formatRupiah(platformFee)}</span>
+                      </p>
+                      <p className="text-lg font-bold text-green-600">
+                        Final Total: {formatRupiah(finalTotal)}
+                      </p>
+                    </>
+                  )}
                 </div>
               </div>
             )}

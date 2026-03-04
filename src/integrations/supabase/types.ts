@@ -131,6 +131,8 @@ export type Database = {
           created_at: string
           customer_name: string
           id: string
+          platform: "regular" | "tiktok" | "shopee"
+          platform_fee: number
           profit: number
           total: number
         }
@@ -139,6 +141,8 @@ export type Database = {
           created_at?: string
           customer_name?: string
           id?: string
+          platform?: "regular" | "tiktok" | "shopee"
+          platform_fee?: number
           profit?: number
           total?: number
         }
@@ -147,6 +151,8 @@ export type Database = {
           created_at?: string
           customer_name?: string
           id?: string
+          platform?: "regular" | "tiktok" | "shopee"
+          platform_fee?: number
           profit?: number
           total?: number
         }
