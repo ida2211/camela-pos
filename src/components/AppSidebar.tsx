@@ -4,6 +4,8 @@ import {
   ShoppingCart,
   Wallet,
   FileBarChart,
+  CreditCard,
+  PiggyBank,
   Settings,
   User,
   LogOut,
@@ -28,6 +30,8 @@ const menuItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
   { title: "Stok Barang", url: "/stok", icon: Package },
   { title: "Penjualan", url: "/penjualan", icon: ShoppingCart },
+  { title: "Hutang", url: "/hutang", icon: CreditCard },
+  { title: "Tabungan", url: "/tabungan", icon: PiggyBank },
   { title: "Pengeluaran", url: "/pengeluaran", icon: Wallet },
   { title: "Laporan", url: "/laporan", icon: FileBarChart },
 ];

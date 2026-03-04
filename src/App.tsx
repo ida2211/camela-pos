@@ -10,6 +10,8 @@ import StokBarang from "@/pages/StokBarang";
 import Penjualan from "@/pages/Penjualan";
 import Pengeluaran from "@/pages/Pengeluaran";
 import Laporan from "@/pages/Laporan";
+import Hutang from "@/pages/Hutang";
+import Tabungan from "@/pages/Tabungan";
 import Login from "@/pages/Login";
 import ResetPassword from "@/pages/ResetPassword";
 import StoreProfile from "@/pages/StoreProfile";
@@ -33,6 +35,8 @@ const App = () => (
               <Route path="/stok" element={<StokBarang />} />
               <Route path="/penjualan" element={<Penjualan />} />
               <Route path="/pengeluaran" element={<Pengeluaran />} />
+              <Route path="/hutang" element={<Hutang />} />
+              <Route path="/tabungan" element={<Tabungan />} />
               <Route path="/laporan" element={<Laporan />} />
             </Route>
           </Route>

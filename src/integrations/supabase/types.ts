@@ -158,6 +158,69 @@ export type Database = {
         }
         Relationships: []
       }
+      debts: {
+        Row: {
+          id: string
+          created_at: string
+          person_name: string
+          amount: number
+          description?: string
+          due_date?: string
+          status: 'unpaid' | 'partial' | 'paid'
+          paid_amount?: number
+        }
+        Insert: {
+          id?: string
+          created_at?: string
+          person_name: string
+          amount: number
+          description?: string
+          due_date?: string
+          status?: 'unpaid' | 'partial' | 'paid'
+          paid_amount?: number
+        }
+        Update: {
+          id: string
+          created_at?: string
+          person_name: string
+          amount: number
+          description?: string
+          due_date?: string
+          status: 'unpaid' | 'partial' | 'paid'
+          paid_amount?: number
+        }
+        Relationships: []
+      }
+      savings: {
+        Row: {
+          id: string
+          created_at: string
+          description: string
+          amount: number
+          type: 'deposit' | 'withdrawal'
+          balance_after: number
+          note?: string
+        }
+        Insert: {
+          id?: string
+          created_at?: string
+          description: string
+          amount: number
+          type: 'deposit' | 'withdrawal'
+          balance_after: number
+          note?: string
+        }
+        Update: {
+          id: string
+          created_at?: string
+          description: string
+          amount: number
+          type: 'deposit' | 'withdrawal'
+          balance_after: number
+          note?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
