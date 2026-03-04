@@ -11,10 +11,8 @@ import {
 } from "@/components/ui/table";
 import {
   ShoppingCart, TrendingUp, Wallet, BarChart3, Trophy, Package,
+  CreditCard, PiggyBank,
 } from "lucide-react";
-import {
-  PieChart, Pie, Cell, Legend, Tooltip, ResponsiveContainer,
-} from "recharts";
 
 const MONTHS = [
   { value: "all", label: "Semua Bulan" },
@@ -31,7 +29,7 @@ export default function Dashboard() {
   const [filterMonth, setFilterMonth] = useState("all");
   const [filterYear, setFilterYear] = useState("all");
 
-  // Realtime subscription for products, sales, sale_items, expenses
+  // Realtime subscription for products, sales, sale_items, expenses, debts, savings
   useEffect(() => {
     const channel = supabase
       .channel("dashboard-realtime")
@@ -47,6 +45,12 @@ export default function Dashboard() {
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "expenses" }, () => {
         queryClient.invalidateQueries({ queryKey: ["expenses"] });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "debts" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["debts"] });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "savings" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["savings"] });
       })
       .subscribe();
 
@@ -85,6 +89,22 @@ export default function Dashboard() {
     },
   });
 
+  const { data: debts } = useQuery({
+    queryKey: ["debts"],
+    queryFn: async () => {
+      const { data } = await supabase.from("debts").select("*");
+      return data ?? [];
+    },
+  });
+
+  const { data: savings } = useQuery({
+    queryKey: ["savings"],
+    queryFn: async () => {
+      const { data } = await supabase.from("savings").select("*");
+      return data ?? [];
+    },
+  });
+
   // Build year options from sales & expenses data
   const availableYears = (() => {
     const years = new Set<string>();
@@ -119,6 +139,10 @@ export default function Dashboard() {
   const totalExpenses = totalExpOps + totalExpBuy;
   const selisih = totalSales - totalExpenses;
 
+  // Calculate total debts and savings
+  const totalDebts = debts?.filter(d => d.status !== 'paid').reduce((sum, d) => sum + (d.amount - d.paid_amount), 0) || 0;
+  const totalSavings = savings?.length > 0 ? savings[savings.length - 1]?.balance_after || 0 : 0;
+
   const topProducts = (() => {
     const map = new Map<string, { name: string; qty: number; total: number }>();
     for (const item of filteredSaleItems) {
@@ -132,12 +156,6 @@ export default function Dashboard() {
     }
     return Array.from(map.values()).sort((a, b) => b.qty - a.qty).slice(0, 10);
   })();
-
-  const pieData = [
-    { name: "Operasional", value: totalExpOps },
-    { name: "Beli Produk", value: totalExpBuy },
-  ];
-  const PIE_COLORS = ["hsl(347, 77%, 50%)", "hsl(30, 80%, 55%)"];
 
   const filterLabel = filterMonth === "all" && filterYear === "all"
     ? "Semua Waktu"
@@ -176,7 +194,7 @@ export default function Dashboard() {
         <p className="text-sm text-muted-foreground">Menampilkan data: <span className="font-medium">{filterLabel}</span></p>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Total Penjualan</CardTitle>
@@ -242,9 +260,39 @@ export default function Dashboard() {
             </div>
           </CardContent>
         </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Total Hutang</CardTitle>
+            <CreditCard className="h-5 w-5 text-orange-500" />
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold text-orange-500">{formatRupiah(totalDebts)}</p>
+            <p className="text-xs text-muted-foreground mt-1">Hutang aktif</p>
+            <div className="mt-2 flex justify-between text-sm text-muted-foreground">
+              <span>Jumlah</span>
+              <span className="font-semibold">{debts?.filter(d => d.status !== 'paid').length || 0}</span>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Total Tabungan</CardTitle>
+            <PiggyBank className="h-5 w-5 text-blue-500" />
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold text-blue-500">{formatRupiah(totalSavings)}</p>
+            <p className="text-xs text-muted-foreground mt-1">Saldo saat ini</p>
+            <div className="mt-2 flex justify-between text-sm text-muted-foreground">
+              <span>Transaksi</span>
+              <span className="font-semibold">{savings?.length || 0}</span>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-6 lg:grid-cols-1">
         <Card>
           <CardHeader className="flex flex-row items-center gap-2">
             <Trophy className="h-5 w-5 text-amber-500" />
@@ -279,25 +327,6 @@ export default function Dashboard() {
                 )}
               </TableBody>
             </Table>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Komposisi Pengeluaran</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={260}>
-              <PieChart>
-                <Pie data={pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={90} dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
-                  {pieData.map((_, i) => (
-                    <Cell key={i} fill={PIE_COLORS[i]} />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(v: number) => formatRupiah(v)} />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
           </CardContent>
         </Card>
       </div>

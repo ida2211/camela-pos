@@ -21,7 +21,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Textarea } from "@/components/ui/textarea";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { CalendarIcon } from "lucide-react";
+import { CalendarIcon, Trash2, CreditCard } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -35,6 +35,11 @@ export default function Hutang() {
   const [description, setDescription] = useState("");
   const [dueDate, setDueDate] = useState<Date>();
   const [editingDebt, setEditingDebt] = useState<Debt | null>(null);
+  
+  // State untuk pembayaran bertahap
+  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [selectedDebt, setSelectedDebt] = useState<Debt | null>(null);
+  const [paymentAmount, setPaymentAmount] = useState("");
 
   // Auto-setup database tables on component mount
   useEffect(() => {
@@ -168,6 +173,31 @@ ${setupSQL}
     },
   });
 
+  const partialPaymentMut = useMutation({
+    mutationFn: async ({ debt, amount }: { debt: Debt; amount: number }) => {
+      const newPaidAmount = (debt.paid_amount || 0) + amount;
+      const updates: any = {
+        paid_amount: newPaidAmount,
+      };
+      
+      if (newPaidAmount >= debt.amount) {
+        updates.status = "paid";
+        updates.paid_amount = debt.amount;
+      } else {
+        updates.status = "partial";
+      }
+      
+      await supabase.from("debts").update(updates).eq("id", debt.id);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["debts"] });
+      setPaymentDialogOpen(false);
+      setSelectedDebt(null);
+      setPaymentAmount("");
+      toast.success("Pembayaran berhasil dicatat");
+    },
+  });
+
   const deleteDebtMut = useMutation({
     mutationFn: async (id: string) => {
       await supabase.from("debts").delete().eq("id", id);
@@ -179,6 +209,11 @@ ${setupSQL}
   });
 
   const totalDebt = debts?.reduce((sum, debt) => {
+    if (debt.status === "paid") return sum;
+    return sum + debt.amount;
+  }, 0) || 0;
+
+  const totalRemainingDebt = debts?.reduce((sum, debt) => {
     if (debt.status === "paid") return sum;
     return sum + (debt.amount - (debt.paid_amount || 0));
   }, 0) || 0;
@@ -277,13 +312,28 @@ ${setupSQL}
         </Dialog>
       </div>
 
-      {/* Summary Card */}
-      <Card className="border-red-200 bg-red-50">
-        <CardContent className="flex items-center justify-between py-4">
-          <span className="text-sm font-medium text-red-700">Total Hutang Aktif</span>
-          <span className="text-xl font-bold text-red-700">{formatRupiah(totalDebt)}</span>
-        </CardContent>
-      </Card>
+      {/* Summary Cards */}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Card className="border-orange-200 bg-orange-50">
+          <CardContent className="flex items-center justify-between py-4">
+            <div>
+              <span className="text-sm font-medium text-orange-700">Total Hutang Aktif</span>
+              <p className="text-xs text-orange-600 mt-1">{debts?.filter(d => d.status !== 'paid').length || 0} hutang</p>
+            </div>
+            <span className="text-xl font-bold text-orange-700">{formatRupiah(totalDebt)}</span>
+          </CardContent>
+        </Card>
+        
+        <Card className="border-red-200 bg-red-50">
+          <CardContent className="flex items-center justify-between py-4">
+            <div>
+              <span className="text-sm font-medium text-red-700">Sisa Hutang</span>
+              <p className="text-xs text-red-600 mt-1">Yang belum dibayar</p>
+            </div>
+            <span className="text-xl font-bold text-red-700">{formatRupiah(totalRemainingDebt)}</span>
+          </CardContent>
+        </Card>
+      </div>
 
       {/* Table */}
       <Card className="flex-1 overflow-hidden">
@@ -336,22 +386,27 @@ ${setupSQL}
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => updateDebtMut.mutate(debt)}
+                                onClick={() => {
+                                  setSelectedDebt(debt);
+                                  setPaymentDialogOpen(true);
+                                }}
                                 disabled={updateDebtMut.isPending}
+                                className="h-8 w-8 p-0"
                               >
-                                Bayar
+                                <CreditCard className="h-4 w-4 text-green-600" />
                               </Button>
                             )}
                             <Button
                               variant="outline"
-                              size="sm"
-                              onClick={() => deleteDebtMut.mutate(debt.id)}
-                              disabled={deleteDebtMut.isPending}
-                            >
-                              Hapus
-                            </Button>
-                          </div>
-                        </TableCell>
+                                size="sm"
+                                onClick={() => deleteDebtMut.mutate(debt.id)}
+                                disabled={deleteDebtMut.isPending}
+                                className="h-8 w-8 p-0"
+                              >
+                                <Trash2 className="h-4 w-4 text-red-600" />
+                              </Button>
+                            </div>
+                          </TableCell>
                       </TableRow>
                     );
                   })
@@ -361,6 +416,51 @@ ${setupSQL}
           </div>
         </CardContent>
       </Card>
+
+      {/* Dialog Pembayaran Bertahap */}
+      <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Pembayaran Hutang</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label>Informasi Hutang</Label>
+              <div className="p-3 bg-gray-50 rounded-md">
+                <p className="font-medium">{selectedDebt?.person_name}</p>
+                <p className="text-sm text-gray-600">Total: {formatRupiah(selectedDebt?.amount || 0)}</p>
+                <p className="text-sm text-gray-600">Sudah dibayar: {formatRupiah(selectedDebt?.paid_amount || 0)}</p>
+                <p className="text-sm font-medium text-red-600">Sisa: {formatRupiah((selectedDebt?.amount || 0) - (selectedDebt?.paid_amount || 0))}</p>
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="paymentAmount">Jumlah Pembayaran</Label>
+              <Input
+                id="paymentAmount"
+                type="number"
+                value={paymentAmount}
+                onChange={(e) => setPaymentAmount(e.target.value)}
+                placeholder="Masukkan jumlah pembayaran"
+                max={(selectedDebt?.amount || 0) - (selectedDebt?.paid_amount || 0)}
+              />
+            </div>
+            <Button 
+              onClick={() => {
+                if (selectedDebt && paymentAmount) {
+                  partialPaymentMut.mutate({
+                    debt: selectedDebt,
+                    amount: Number(paymentAmount)
+                  });
+                }
+              }} 
+              disabled={!paymentAmount || !selectedDebt || partialPaymentMut.isPending}
+              className="w-full"
+            >
+              {partialPaymentMut.isPending ? "Memproses..." : "Bayar"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

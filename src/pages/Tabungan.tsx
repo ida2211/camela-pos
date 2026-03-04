@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Database } from "@/integrations/supabase/types";
@@ -31,6 +31,87 @@ export default function Tabungan() {
   const [amount, setAmount] = useState("");
   const [type, setType] = useState<"deposit" | "withdrawal">("deposit");
   const [note, setNote] = useState("");
+
+  // Auto-setup database tables on component mount
+  useEffect(() => {
+    const autoSetupTables = async () => {
+      try {
+        console.log("Auto-checking savings table...");
+        
+        // Check if savings table exists
+        const { error: checkError } = await supabase
+          .from("savings")
+          .select("*")
+          .limit(1);
+        
+        if (checkError && checkError.message.includes('relation')) {
+          console.log("Savings table doesn't exist, setting up automatically...");
+          
+          const setupSQL = `
+            CREATE TABLE IF NOT EXISTS savings (
+              id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+              created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+              description TEXT NOT NULL,
+              amount DECIMAL(15,2) NOT NULL,
+              type TEXT NOT NULL CHECK (type IN ('deposit', 'withdrawal')),
+              balance_after DECIMAL(15,2) NOT NULL,
+              note TEXT
+            );
+            
+            CREATE INDEX IF NOT EXISTS idx_savings_type ON savings(type);
+            CREATE INDEX IF NOT EXISTS idx_savings_created_at ON savings(created_at);
+            
+            ALTER TABLE savings ENABLE ROW LEVEL SECURITY;
+            
+            CREATE POLICY "Users can view all savings" ON savings FOR SELECT USING (true);
+            CREATE POLICY "Users can insert savings" ON savings FOR INSERT WITH CHECK (true);
+            CREATE POLICY "Users can update savings" ON savings FOR UPDATE WITH CHECK (true);
+            CREATE POLICY "Users can delete savings" ON savings FOR DELETE WITH CHECK (true);
+            
+            GRANT ALL ON savings TO authenticated;
+            GRANT SELECT ON savings TO anon;
+          `;
+          
+          console.log("Savings table setup SQL:", setupSQL);
+          
+          // Copy to clipboard
+          try {
+            await navigator.clipboard.writeText(setupSQL);
+            console.log("✅ Savings table SQL copied to clipboard!");
+            
+            toast.error("Tabel Tabungan perlu dibuat. SQL sudah disalin ke clipboard.", {
+              duration: 10000
+            });
+            
+            // Auto open dashboard
+            window.open("https://supabase.com/dashboard/project/iyjtduaxwujsyrcdglia/sql", "_blank");
+            
+            alert(`TABEL TABUNGAN PERLU DIBUAT!
+
+SQL sudah disalin ke clipboard dan dashboard dibuka.
+
+1. Paste SQL di SQL Editor
+2. Click "Run"
+3. Refresh halaman ini
+
+SQL:
+${setupSQL}
+            `);
+          } catch (clipboardError) {
+            toast.error("Tabel Tabungan perlu dibuat. Lihat console untuk SQL.", {
+              duration: 10000
+            });
+          }
+        } else {
+          console.log("✅ Savings table already exists");
+        }
+      } catch (error) {
+        console.log("Auto-setup check failed:", error);
+      }
+    };
+    
+    autoSetupTables();
+  }, []);
 
   const { data: savings, isLoading } = useQuery({
     queryKey: ["savings"],
@@ -128,12 +209,16 @@ export default function Tabungan() {
                 <Label>Jenis Transaksi</Label>
                 <RadioGroup value={type} onValueChange={(value) => setType(value as "deposit" | "withdrawal")}>
                   <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="deposit" id="deposit">
+                    <RadioGroupItem value="deposit" id="deposit" />
+                    <Label htmlFor="deposit" className="font-normal">
                       Setoran
-                    </RadioGroupItem>
-                    <RadioGroupItem value="withdrawal" id="withdrawal">
+                    </Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="withdrawal" id="withdrawal" />
+                    <Label htmlFor="withdrawal" className="font-normal">
                       Penarikan
-                    </RadioGroupItem>
+                    </Label>
                   </div>
                 </RadioGroup>
               </div>

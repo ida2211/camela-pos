@@ -16,7 +16,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Plus, Search, Trash2, ShoppingCart, Pencil, Eye, CalendarIcon, X, Printer, Tag, MessageCircle } from "lucide-react";
+import { Plus, Search, Trash2, ShoppingCart, Pencil, Eye, CalendarIcon, X, Printer, MessageCircle, Percent, Settings } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import type { Tables } from "@/integrations/supabase/types";
@@ -239,8 +239,6 @@ export default function Penjualan() {
     platformFee = cartTotal * (feePercent / 100);
   }
   const finalTotal = cartTotal - platformFee;
-
-  // Auto-setup platform fields on component mount
   useEffect(() => {
     const autoSetupPlatform = async () => {
       try {
@@ -397,55 +395,6 @@ Dashboard: https://supabase.com/dashboard/project/iyjtduaxwujsyrcdglia/sql
     
     autoSetupPlatform();
   }, []);
-const setupPlatformFields = async () => {
-  try {
-    console.log("Setting up platform fields...");
-    
-    // Check if platform column exists
-    const { error: checkError } = await supabase
-      .from("sales")
-      .select("platform")
-      .limit(1);
-    
-    if (checkError && checkError.message.includes('column')) {
-      console.log("Platform columns don't exist, creating them...");
-      
-      // Create platform columns using raw SQL through Supabase
-      const sql = `
-        ALTER TABLE sales 
-        ADD COLUMN IF NOT EXISTS platform TEXT DEFAULT 'regular' CHECK (platform IN ('regular', 'tiktok', 'shopee')),
-        ADD COLUMN IF NOT EXISTS platform_fee DECIMAL(15,2) DEFAULT 0.00;
-        
-        CREATE INDEX IF NOT EXISTS idx_sales_platform ON sales(platform);
-        
-        UPDATE sales 
-        SET platform = 'regular' 
-        WHERE platform IS NULL;
-      `;
-      
-      console.log("Please run this SQL in Supabase Dashboard SQL Editor:");
-      console.log(sql);
-      
-      // Show user-friendly message
-      alert(`Platform fields need to be added to database!
-
-Please run this SQL in Supabase Dashboard SQL Editor:
-
-${sql}
-
-After running the SQL, refresh this page and try again.
-      `);
-      
-      return false;
-    }
-    
-    console.log("Platform fields already exist");
-    return true;
-  } catch (error) {
-    console.error("Setup error:", error);
-    return false;
-  }
-};
 
 // Helper function to process items and stock
 const processItemsAndStock = async (sale: any, cart: CartItem[], products: any[], effectivePrice: (c: CartItem) => number) => {
@@ -737,9 +686,6 @@ const submitSale = useMutation({
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between flex-shrink-0">
         <h1 className="text-2xl font-bold">Penjualan</h1>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={setupPlatformFields}>
-            <Tag className="mr-2 h-4 w-4" /> Setup Platform
-          </Button>
           <Button onClick={() => setDialogOpen(true)}>
             <ShoppingCart className="mr-2 h-4 w-4" /> Transaksi Baru
           </Button>
@@ -921,7 +867,7 @@ const submitSale = useMutation({
               <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 bg-gray-50">
                 <div className="flex items-center mb-3">
                   <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center mr-3">
-                    <Tag className="h-4 w-4 text-gray-600" />
+                    <Percent className="h-4 w-4 text-gray-600" />
                   </div>
                   <div>
                     <Label className="text-sm font-semibold text-gray-700">Potongan Platform</Label>
@@ -964,7 +910,7 @@ const submitSale = useMutation({
             {/* Toggle Reseler */}
             {platform === "regular" && (
               <div className="flex items-center gap-3 rounded-lg border p-3 bg-muted/30">
-                <Tag className="h-4 w-4 text-amber-500 flex-shrink-0" />
+                <Settings className="h-4 w-4 text-amber-500 flex-shrink-0" />
                 <div className="flex-1">
                   <p className="text-sm font-medium">Harga Reseler</p>
                   <p className="text-xs text-muted-foreground">Aktifkan untuk input potongan per item</p>

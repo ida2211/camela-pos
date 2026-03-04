@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { formatRupiah, formatDate } from "@/lib/format";
+import { format } from "date-fns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,8 +16,11 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Search, Pencil, Trash2, Eye } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { Plus, Search, Pencil, Trash2, Eye, CalendarIcon, X } from "lucide-react";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import type { Tables } from "@/integrations/supabase/types";
 
 type Expense = Tables<"expenses">;
@@ -24,9 +28,8 @@ type Expense = Tables<"expenses">;
 export default function Pengeluaran() {
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState<"all" | "Operasional" | "Beli Produk">("all");
+  const [dateFrom, setDateFrom] = useState<Date | undefined>();
+  const [dateTo, setDateTo] = useState<Date | undefined>();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState({
     name: "",
@@ -113,10 +116,10 @@ export default function Pengeluaran() {
 
   const filtered = expenses.filter((e) => {
     const matchesSearch = e.name.toLowerCase().includes(search.toLowerCase());
-    const matchesDateFrom = !dateFrom || e.expense_date >= dateFrom;
-    const matchesDateTo = !dateTo || e.expense_date <= dateTo;
-    const matchesCategory = categoryFilter === "all" || e.category === categoryFilter;
-    return matchesSearch && matchesDateFrom && matchesDateTo && matchesCategory;
+    const expenseDate = new Date(e.expense_date);
+    const matchesDateFrom = !dateFrom || expenseDate >= new Date(dateFrom.setHours(0, 0, 0, 0));
+    const matchesDateTo = !dateTo || expenseDate <= new Date(new Date(dateTo).setHours(23, 59, 59, 999));
+    return matchesSearch && matchesDateFrom && matchesDateTo;
   });
 
   const totalFiltered = filtered.reduce((s, r) => s + r.amount, 0);
@@ -149,28 +152,34 @@ export default function Pengeluaran() {
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input placeholder="Cari pengeluaran..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
             </div>
-            <div className="flex gap-2">
-              <div>
-                <Label className="text-xs">Dari Tanggal</Label>
-                <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="w-40" />
-              </div>
-              <div>
-                <Label className="text-xs">Sampai Tanggal</Label>
-                <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="w-40" />
-              </div>
-              <div>
-                <Label className="text-xs">Kategori</Label>
-                <Select value={categoryFilter} onValueChange={(v) => setCategoryFilter(v as typeof categoryFilter)}>
-                  <SelectTrigger className="w-32">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Semua</SelectItem>
-                    <SelectItem value="Operasional">Operasional</SelectItem>
-                    <SelectItem value="Beli Produk">Beli Produk</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+            <div className="flex items-end gap-2">
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className={cn("w-[150px] justify-start text-left font-normal", !dateFrom && "text-muted-foreground")}>
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {dateFrom ? format(dateFrom, "dd/MM/yyyy") : "Dari"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar mode="single" selected={dateFrom} onSelect={setDateFrom} initialFocus className="p-3 pointer-events-auto" />
+                </PopoverContent>
+              </Popover>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className={cn("w-[150px] justify-start text-left font-normal", !dateTo && "text-muted-foreground")}>
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {dateTo ? format(dateTo, "dd/MM/yyyy") : "Sampai"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar mode="single" selected={dateTo} onSelect={setDateTo} initialFocus className="p-3 pointer-events-auto" />
+                </PopoverContent>
+              </Popover>
+              {(dateFrom || dateTo) && (
+                <Button variant="ghost" size="icon" onClick={() => { setDateFrom(undefined); setDateTo(undefined); }}>
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
             </div>
           </div>
         </CardHeader>
@@ -180,7 +189,6 @@ export default function Pengeluaran() {
               <TableRow>
                 <TableHead>Nama</TableHead>
                 <TableHead>Tanggal</TableHead>
-                <TableHead>Kategori</TableHead>
                 <TableHead className="text-right">Nominal</TableHead>
                 <TableHead>Catatan</TableHead>
                 <TableHead className="text-right">Aksi</TableHead>
@@ -189,7 +197,7 @@ export default function Pengeluaran() {
             <TableBody>
               {filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
                     Belum ada pengeluaran
                   </TableCell>
                 </TableRow>
@@ -198,11 +206,6 @@ export default function Pengeluaran() {
                   <TableRow key={e.id}>
                     <TableCell className="font-medium">{e.name}</TableCell>
                     <TableCell>{formatDate(e.expense_date)}</TableCell>
-                    <TableCell>
-                      <Badge variant={e.category === "Operasional" ? "destructive" : "secondary"}>
-                        {e.category}
-                      </Badge>
-                    </TableCell>
                     <TableCell className="text-right font-semibold text-rose">{formatRupiah(e.amount)}</TableCell>
                     <TableCell className="text-muted-foreground text-sm">{e.note}</TableCell>
                     <TableCell className="text-right">
@@ -244,7 +247,23 @@ export default function Pengeluaran() {
               </div>
               <div>
                 <Label>Tanggal</Label>
-                <Input type="date" value={form.expense_date} onChange={(e) => setForm({ ...form, expense_date: e.target.value })} />
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" className={cn("w-full justify-start text-left font-normal", !form.expense_date && "text-muted-foreground")}>
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {form.expense_date ? format(new Date(form.expense_date), "dd/MM/yyyy") : "Pilih tanggal"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar 
+                      mode="single" 
+                      selected={form.expense_date ? new Date(form.expense_date) : undefined} 
+                      onSelect={(date) => setForm({ ...form, expense_date: date.toISOString().split("T")[0] })} 
+                      initialFocus 
+                      className="p-3 pointer-events-auto" 
+                    />
+                  </PopoverContent>
+                </Popover>
               </div>
             </div>
             <div>
@@ -282,10 +301,6 @@ export default function Pengeluaran() {
               <span className="font-medium">{viewExp.name}</span>
               <span className="text-muted-foreground">Tanggal</span>
               <span>{formatDate(viewExp.expense_date)}</span>
-              <span className="text-muted-foreground">Kategori</span>
-              <Badge variant={viewExp.category === "Operasional" ? "destructive" : "secondary"} className="w-fit">
-                {viewExp.category}
-              </Badge>
               <span className="text-muted-foreground">Nominal</span>
               <span className="font-bold text-rose">{formatRupiah(viewExp.amount)}</span>
               <span className="text-muted-foreground">Catatan</span>
@@ -313,7 +328,23 @@ export default function Pengeluaran() {
               </div>
               <div>
                 <Label>Tanggal</Label>
-                <Input type="date" value={editForm.expense_date} onChange={(e) => setEditForm({ ...editForm, expense_date: e.target.value })} />
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" className={cn("w-full justify-start text-left font-normal", !editForm.expense_date && "text-muted-foreground")}>
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {editForm.expense_date ? format(new Date(editForm.expense_date), "dd/MM/yyyy") : "Pilih tanggal"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar 
+                      mode="single" 
+                      selected={editForm.expense_date ? new Date(editForm.expense_date) : undefined} 
+                      onSelect={(date) => setEditForm({ ...editForm, expense_date: date.toISOString().split("T")[0] })} 
+                      initialFocus 
+                      className="p-3 pointer-events-auto" 
+                    />
+                  </PopoverContent>
+                </Popover>
               </div>
             </div>
             <div>

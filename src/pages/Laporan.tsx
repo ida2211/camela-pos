@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState, useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { formatRupiah } from "@/lib/format";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,12 +10,13 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
-import { TrendingUp, TrendingDown, DollarSign, Calculator, Download, FileText, Package } from "lucide-react";
+import { TrendingUp, TrendingDown, DollarSign, Calculator, Download, FileText, Package, CreditCard, PiggyBank } from "lucide-react";
 import { toast } from "sonner";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
 export default function Laporan() {
+  const queryClient = useQueryClient();
   const today = new Date();
   const firstDay = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split("T")[0];
   const lastDay = today.toISOString().split("T")[0];
@@ -29,6 +30,8 @@ export default function Laporan() {
     penjualan: false,
     pengeluaran: false,
     keuangan: false,
+    hutang: false,
+    tabungan: false,
   });
 
   const { data: sales = [] } = useQuery({
@@ -63,6 +66,22 @@ export default function Laporan() {
     },
   });
 
+  const { data: debts = [] } = useQuery({
+    queryKey: ["debts"],
+    queryFn: async () => {
+      const { data } = await supabase.from("debts").select("*");
+      return data ?? [];
+    },
+  });
+
+  const { data: savings = [] } = useQuery({
+    queryKey: ["savings"],
+    queryFn: async () => {
+      const { data } = await supabase.from("savings").select("*");
+      return data ?? [];
+    },
+  });
+
   const filteredSales = sales.filter((s) => {
     const d = s.created_at.split("T")[0];
     return d >= startDate && d <= endDate;
@@ -72,6 +91,16 @@ export default function Laporan() {
     return e.expense_date >= startDate && e.expense_date <= endDate;
   });
 
+  const filteredDebts = debts.filter((d) => {
+    const debtDate = d.created_at.split("T")[0];
+    return debtDate >= startDate && debtDate <= endDate;
+  });
+
+  const filteredSavings = savings.filter((s) => {
+    const savingDate = s.created_at.split("T")[0];
+    return savingDate >= startDate && savingDate <= endDate;
+  });
+
   const totalPendapatan = filteredSales.reduce((s, r) => s + r.total, 0);
   const totalCost = filteredSales.reduce((s, r) => s + r.cost, 0);
   const totalProfit = filteredSales.reduce((s, r) => s + r.profit, 0);
@@ -79,6 +108,44 @@ export default function Laporan() {
   const totalExpBuy = filteredExpenses.filter((e) => e.category === "Beli Produk").reduce((s, r) => s + r.amount, 0);
   const totalPengeluaran = totalExpOps + totalExpBuy;
   const labaBersih = totalPendapatan - totalPengeluaran;
+
+  // Calculate hutang and tabungan totals
+  const totalDebtAmount = filteredDebts.reduce((sum, d) => sum + d.amount, 0);
+  const totalPaidDebt = filteredDebts.reduce((sum, d) => sum + (d.paid_amount || 0), 0);
+  const totalRemainingDebt = totalDebtAmount - totalPaidDebt;
+  
+  const totalDeposit = filteredSavings.filter(s => s.type === 'deposit').reduce((sum, s) => sum + s.amount, 0);
+  const totalWithdrawal = filteredSavings.filter(s => s.type === 'withdrawal').reduce((sum, s) => sum + s.amount, 0);
+  const netSavings = totalDeposit - totalWithdrawal;
+  const currentBalance = savings.length > 0 ? savings[savings.length - 1]?.balance_after || 0 : 0;
+
+  // Realtime subscription for all data
+  useEffect(() => {
+    const channel = supabase
+      .channel("laporan-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "products" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["products"] });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "sales" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["sales"] });
+        queryClient.invalidateQueries({ queryKey: ["sale_items"] });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "sale_items" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["sale_items"] });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "expenses" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["expenses"] });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "debts" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["debts"] });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "savings" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["savings"] });
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [queryClient]);
 
   const toggleExport = (key: keyof typeof exportOptions) => {
     setExportOptions((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -112,6 +179,12 @@ export default function Laporan() {
       if (exportOptions.pengeluaran) {
         downloadCSV(`pengeluaran_${startDate}_${endDate}.csv`, ["Tanggal", "Nama", "Kategori", "Nominal", "Catatan"], filteredExpenses.map((e) => [e.expense_date, e.name, e.category, String(e.amount), e.note ?? ""]));
       }
+      if (exportOptions.hutang) {
+        downloadCSV(`hutang_${startDate}_${endDate}.csv`, ["Tanggal", "Nama", "Jumlah", "Dibayar", "Sisa", "Status"], filteredDebts.map((d) => [d.created_at.split("T")[0], d.person_name, String(d.amount), String(d.paid_amount || 0), String(d.amount - (d.paid_amount || 0)), d.status]));
+      }
+      if (exportOptions.tabungan) {
+        downloadCSV(`tabungan_${startDate}_${endDate}.csv`, ["Tanggal", "Deskripsi", "Jumlah", "Tipe", "Saldo Setelah", "Catatan"], filteredSavings.map((s) => [s.created_at.split("T")[0], s.description, String(s.amount), s.type, String(s.balance_after), s.note ?? ""]));
+      }
       if (exportOptions.keuangan) {
         const rows: string[][] = [
           ["Total Penjualan (Omzet)", String(totalPendapatan)],
@@ -121,6 +194,8 @@ export default function Laporan() {
           ["Pengeluaran Beli Produk", String(totalExpBuy)],
           ["Total Pengeluaran", String(totalPengeluaran)],
           ["Keuntungan Bersih", String(labaBersih)],
+          ["Total Hutang", String(totalRemainingDebt)],
+          ["Saldo Tabungan", String(currentBalance)],
         ];
         downloadCSV(`laporan_keuangan_${startDate}_${endDate}.csv`, ["Keterangan", "Nominal"], rows);
       }
@@ -242,6 +317,51 @@ export default function Laporan() {
       });
     }
 
+    if (selected.includes("hutang")) {
+      if (y > 250) { doc.addPage(); y = 15; }
+      doc.setFontSize(12);
+      doc.text("Data Hutang", 14, y);
+      y += 2;
+      autoTable(doc, {
+        startY: y,
+        head: [["Tanggal", "Nama", "Jumlah", "Dibayar", "Sisa", "Status"]],
+        body: filteredDebts.map((d) => [
+          d.created_at.split("T")[0],
+          d.person_name,
+          formatRupiah(d.amount),
+          formatRupiah(d.paid_amount || 0),
+          formatRupiah(d.amount - (d.paid_amount || 0)),
+          d.status === 'paid' ? 'Lunas' : d.status === 'partial' ? 'Sebagian' : 'Belum Dibayar',
+        ]),
+        theme: "striped",
+        headStyles: { fillColor: [251, 146, 60] },
+        styles: { fontSize: 8 },
+      });
+      y = (doc as any).lastAutoTable.finalY + 12;
+    }
+
+    if (selected.includes("tabungan")) {
+      if (y > 250) { doc.addPage(); y = 15; }
+      doc.setFontSize(12);
+      doc.text("Data Tabungan", 14, y);
+      y += 2;
+      autoTable(doc, {
+        startY: y,
+        head: [["Tanggal", "Deskripsi", "Jumlah", "Tipe", "Saldo Setelah", "Catatan"]],
+        body: filteredSavings.map((s) => [
+          s.created_at.split("T")[0],
+          s.description,
+          formatRupiah(s.amount),
+          s.type === 'deposit' ? 'Setoran' : 'Penarikan',
+          formatRupiah(s.balance_after),
+          s.note ?? "",
+        ]),
+        theme: "striped",
+        headStyles: { fillColor: [59, 130, 246] },
+        styles: { fontSize: 8 },
+      });
+    }
+
     // Footer
     const pageCount = doc.getNumberOfPages();
     for (let i = 1; i <= pageCount; i++) {
@@ -277,7 +397,7 @@ export default function Laporan() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-5">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Total Penjualan</CardTitle>
@@ -310,6 +430,28 @@ export default function Laporan() {
               {formatRupiah(labaBersih)}
             </p>
             <p className="mt-1 text-xs text-muted-foreground">Penjualan − Pengeluaran</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Total Hutang</CardTitle>
+            <CreditCard className="h-5 w-5 text-orange-500" />
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold text-orange-500">{formatRupiah(totalRemainingDebt)}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{filteredDebts.length} hutang aktif</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Saldo Tabungan</CardTitle>
+            <PiggyBank className="h-5 w-5 text-blue-500" />
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold text-blue-500">{formatRupiah(currentBalance)}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{filteredSavings.length} transaksi</p>
           </CardContent>
         </Card>
       </div>
@@ -390,6 +532,116 @@ export default function Laporan() {
         </CardContent>
       </Card>
 
+      {/* Laporan Hutang */}
+      <Card>
+        <CardHeader className="flex flex-row items-center gap-2">
+          <CreditCard className="h-5 w-5 text-orange-500" />
+          <CardTitle className="text-base">Laporan Hutang</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div className="space-y-2">
+              <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Total Hutang</h3>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Jumlah Hutang</span>
+                <span className="font-semibold text-orange-500">{formatRupiah(totalDebtAmount)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Sudah Dibayar</span>
+                <span className="font-semibold text-green-600">{formatRupiah(totalPaidDebt)}</span>
+              </div>
+              <div className="flex justify-between border-t pt-2">
+                <span className="font-medium">Sisa Hutang</span>
+                <span className="font-bold text-orange-500">{formatRupiah(totalRemainingDebt)}</span>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Statistik</h3>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Jumlah Transaksi</span>
+                <span className="font-semibold">{filteredDebts.length}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Hutang Lunas</span>
+                <span className="font-semibold text-green-600">{filteredDebts.filter(d => d.status === 'paid').length}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Hutang Aktif</span>
+                <span className="font-semibold text-orange-500">{filteredDebts.filter(d => d.status !== 'paid').length}</span>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Rata-rata</h3>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Rata-rata Hutang</span>
+                <span className="font-semibold">{formatRupiah(filteredDebts.length > 0 ? totalDebtAmount / filteredDebts.length : 0)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">% Lunas</span>
+                <span className="font-semibold">{filteredDebts.length > 0 ? Math.round((filteredDebts.filter(d => d.status === 'paid').length / filteredDebts.length) * 100) : 0}%</span>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Laporan Tabungan */}
+      <Card>
+        <CardHeader className="flex flex-row items-center gap-2">
+          <PiggyBank className="h-5 w-5 text-blue-500" />
+          <CardTitle className="text-base">Laporan Tabungan</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div className="space-y-2">
+              <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Total Transaksi</h3>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Total Setoran</span>
+                <span className="font-semibold text-green-600">{formatRupiah(totalDeposit)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Total Penarikan</span>
+                <span className="font-semibold text-red-600">{formatRupiah(totalWithdrawal)}</span>
+              </div>
+              <div className="flex justify-between border-t pt-2">
+                <span className="font-medium">Net Tabungan</span>
+                <span className="font-bold text-blue-500">{formatRupiah(netSavings)}</span>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Statistik</h3>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Jumlah Transaksi</span>
+                <span className="font-semibold">{filteredSavings.length}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Jumlah Setoran</span>
+                <span className="font-semibold text-green-600">{filteredSavings.filter(s => s.type === 'deposit').length}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Jumlah Penarikan</span>
+                <span className="font-semibold text-red-600">{filteredSavings.filter(s => s.type === 'withdrawal').length}</span>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Saldo</h3>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Saldo Akhir</span>
+                <span className="font-bold text-blue-500">{formatRupiah(currentBalance)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Rata-rata Setoran</span>
+                <span className="font-semibold">{formatRupiah(filteredSavings.filter(s => s.type === 'deposit').length > 0 ? totalDeposit / filteredSavings.filter(s => s.type === 'deposit').length : 0)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Rata-rata Penarikan</span>
+                <span className="font-semibold">{formatRupiah(filteredSavings.filter(s => s.type === 'withdrawal').length > 0 ? totalWithdrawal / filteredSavings.filter(s => s.type === 'withdrawal').length : 0)}</span>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Export Dialog */}
       <Dialog open={exportOpen} onOpenChange={setExportOpen}>
         <DialogContent>
@@ -444,6 +696,20 @@ export default function Laporan() {
               <Label htmlFor="exp-keuangan" className="cursor-pointer">
                 <span className="font-medium">Ringkasan Keuangan</span>
                 <p className="text-xs text-muted-foreground">Laporan ringkasan omzet, pengeluaran, dan laba bersih</p>
+              </Label>
+            </div>
+            <div className="flex items-center space-x-3">
+              <Checkbox id="exp-hutang" checked={exportOptions.hutang} onCheckedChange={() => toggleExport("hutang")} />
+              <Label htmlFor="exp-hutang" className="cursor-pointer">
+                <span className="font-medium">Data Hutang</span>
+                <p className="text-xs text-muted-foreground">Riwayat hutang sesuai rentang tanggal</p>
+              </Label>
+            </div>
+            <div className="flex items-center space-x-3">
+              <Checkbox id="exp-tabungan" checked={exportOptions.tabungan} onCheckedChange={() => toggleExport("tabungan")} />
+              <Label htmlFor="exp-tabungan" className="cursor-pointer">
+                <span className="font-medium">Data Tabungan</span>
+                <p className="text-xs text-muted-foreground">Riwayat tabungan sesuai rentang tanggal</p>
               </Label>
             </div>
           </div>
